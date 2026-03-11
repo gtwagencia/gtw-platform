@@ -1,0 +1,388 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/store/auth';
+import Header from '@/components/layout/Header';
+import api from '@/lib/api';
+import type { BusinessHours, BusinessHoursDay } from '@/types';
+import { Save, Eye, EyeOff, Brain, Clock, MessageSquare } from 'lucide-react';
+import clsx from 'clsx';
+
+// ── Default business hours ───────────────────────────────────────────────────
+
+const DEFAULT_DAY: BusinessHoursDay = { open: '08:00', close: '18:00', enabled: true };
+const DEFAULT_DAY_OFF: BusinessHoursDay = { open: '08:00', close: '12:00', enabled: false };
+
+const DEFAULT_BUSINESS_HOURS: BusinessHours = {
+  enabled:   false,
+  timezone:  'America/Sao_Paulo',
+  monday:    { ...DEFAULT_DAY },
+  tuesday:   { ...DEFAULT_DAY },
+  wednesday: { ...DEFAULT_DAY },
+  thursday:  { ...DEFAULT_DAY },
+  friday:    { ...DEFAULT_DAY },
+  saturday:  { ...DEFAULT_DAY_OFF },
+  sunday:    { ...DEFAULT_DAY_OFF },
+};
+
+const DAY_LABELS: Record<string, string> = {
+  monday:    'Segunda',
+  tuesday:   'Terça',
+  wednesday: 'Quarta',
+  thursday:  'Quinta',
+  friday:    'Sexta',
+  saturday:  'Sábado',
+  sunday:    'Domingo',
+};
+
+const DAY_KEYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as const;
+
+// ── Component ────────────────────────────────────────────────────────────────
+
+export default function SettingsPage() {
+  const { currentWorkspace, setWorkspace } = useAuth();
+
+  const [form, setForm] = useState({
+    name:                 '',
+    timezone:             'America/Sao_Paulo',
+    metaPixelId:          '',
+    metaAdAccountId:      '',
+    metaAccessToken:      '',
+    metaConversionsToken: '',
+    followUpEnabled:      false,
+    aiAnalysisEnabled:    false,
+    anthropicApiKey:      '',
+  });
+
+  const [businessHours, setBusinessHours] = useState<BusinessHours>(DEFAULT_BUSINESS_HOURS);
+  const [showTokens,    setShowTokens]    = useState(false);
+  const [saving,        setSaving]        = useState(false);
+  const [saved,         setSaved]         = useState(false);
+
+  useEffect(() => {
+    if (currentWorkspace) {
+      setForm({
+        name:                 currentWorkspace.name,
+        timezone:             currentWorkspace.timezone,
+        metaPixelId:          currentWorkspace.meta_pixel_id || '',
+        metaAdAccountId:      currentWorkspace.meta_ad_account_id || '',
+        metaAccessToken:      '',
+        metaConversionsToken: '',
+        followUpEnabled:      currentWorkspace.follow_up_enabled ?? false,
+        aiAnalysisEnabled:    currentWorkspace.ai_analysis_enabled ?? false,
+        anthropicApiKey:      '',
+      });
+      setBusinessHours(currentWorkspace.business_hours ?? DEFAULT_BUSINESS_HOURS);
+    }
+  }, [currentWorkspace]);
+
+  function updateDay(day: typeof DAY_KEYS[number], field: keyof BusinessHoursDay, value: string | boolean) {
+    setBusinessHours(prev => ({
+      ...prev,
+      [day]: { ...prev[day], [field]: value },
+    }));
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!currentWorkspace) return;
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        ...form,
+        businessHours,
+      };
+      // Don't send empty tokens (would overwrite existing ones)
+      if (!payload.metaAccessToken)      delete payload.metaAccessToken;
+      if (!payload.metaConversionsToken) delete payload.metaConversionsToken;
+      if (!payload.anthropicApiKey)      delete payload.anthropicApiKey;
+
+      const { data } = await api.put(
+        `/orgs/${currentWorkspace.org_id}/workspaces/${currentWorkspace.id}`,
+        payload
+      );
+      setWorkspace(data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!currentWorkspace) {
+    return (
+      <>
+        <Header title="Configurações" />
+        <div className="flex-1 flex items-center justify-center text-gray-400">Selecione um workspace</div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Header title="Configurações" />
+
+      <div className="flex-1 overflow-y-auto p-6 max-w-2xl">
+        <form onSubmit={handleSave} className="space-y-6">
+
+          {/* ── Workspace geral ────────────────────────────────────── */}
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-4">Workspace</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                <input
+                  className="input"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fuso horário</label>
+                <select
+                  className="input"
+                  value={form.timezone}
+                  onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+                >
+                  <option value="America/Sao_Paulo">America/Sao_Paulo (BRT)</option>
+                  <option value="America/Manaus">America/Manaus (AMT)</option>
+                  <option value="America/Belem">America/Belem</option>
+                  <option value="America/Fortaleza">America/Fortaleza</option>
+                  <option value="America/Recife">America/Recife</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Meta Ads ───────────────────────────────────────────── */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-gray-900">Meta Ads / Conversions API</h2>
+              <button
+                type="button"
+                onClick={() => setShowTokens(!showTokens)}
+                className="btn-ghost text-xs"
+              >
+                {showTokens
+                  ? <><EyeOff className="w-3.5 h-3.5" />Ocultar</>
+                  : <><Eye className="w-3.5 h-3.5" />Mostrar</>
+                }
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pixel ID</label>
+                <input
+                  className="input"
+                  value={form.metaPixelId}
+                  onChange={(e) => setForm({ ...form, metaPixelId: e.target.value })}
+                  placeholder="123456789"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ad Account ID</label>
+                <input
+                  className="input"
+                  value={form.metaAdAccountId}
+                  onChange={(e) => setForm({ ...form, metaAdAccountId: e.target.value })}
+                  placeholder="act_123456789"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
+                <input
+                  className="input font-mono text-xs"
+                  type={showTokens ? 'text' : 'password'}
+                  value={form.metaAccessToken}
+                  onChange={(e) => setForm({ ...form, metaAccessToken: e.target.value })}
+                  placeholder="Deixe em branco para manter o atual"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Conversions API Token</label>
+                <input
+                  className="input font-mono text-xs"
+                  type={showTokens ? 'text' : 'password'}
+                  value={form.metaConversionsToken}
+                  onChange={(e) => setForm({ ...form, metaConversionsToken: e.target.value })}
+                  placeholder="Deixe em branco para manter o atual"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ── IA e Follow-up ─────────────────────────────────────── */}
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <Brain className="w-4 h-4 text-indigo-500" />
+              Inteligência Artificial
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Qualificação automática de leads e geração de mensagens de follow-up.
+            </p>
+
+            <div className="space-y-4">
+              {/* Anthropic API Key */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Chave API Anthropic (Claude)
+                </label>
+                <input
+                  className="input font-mono text-xs"
+                  type={showTokens ? 'text' : 'password'}
+                  value={form.anthropicApiKey}
+                  onChange={(e) => setForm({ ...form, anthropicApiKey: e.target.value })}
+                  placeholder="sk-ant-... (deixe em branco para manter o atual)"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Necessária para análise de conversas e geração de follow-ups.
+                </p>
+              </div>
+
+              {/* AI Analysis toggle */}
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div className="relative flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={form.aiAnalysisEnabled}
+                    onChange={(e) => setForm({ ...form, aiAnalysisEnabled: e.target.checked })}
+                  />
+                  <div className={clsx(
+                    'w-10 h-5 rounded-full transition-colors',
+                    form.aiAnalysisEnabled ? 'bg-indigo-500' : 'bg-gray-200'
+                  )} />
+                  <div className={clsx(
+                    'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                    form.aiAnalysisEnabled && 'translate-x-5'
+                  )} />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-gray-900">Análise automática de leads</div>
+                  <div className="text-xs text-gray-500">
+                    A IA lê as conversas e qualifica cada lead no funil a cada 15 minutos
+                  </div>
+                </div>
+              </label>
+
+              {/* Follow-up toggle */}
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div className="relative flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={form.followUpEnabled}
+                    onChange={(e) => setForm({ ...form, followUpEnabled: e.target.checked })}
+                  />
+                  <div className={clsx(
+                    'w-10 h-5 rounded-full transition-colors',
+                    form.followUpEnabled ? 'bg-indigo-500' : 'bg-gray-200'
+                  )} />
+                  <div className={clsx(
+                    'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                    form.followUpEnabled && 'translate-x-5'
+                  )} />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-gray-900 flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-orange-500" />
+                    Follow-up automático por IA
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Envia mensagens automáticas após 30 min, 1 dia e 3 dias sem resposta
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* ── Horário comercial ──────────────────────────────────── */}
+          <div className="card p-6">
+            <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-orange-500" />
+              Horário Comercial
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Follow-ups só são enviados dentro deste horário.
+            </p>
+
+            {/* Enable toggle */}
+            <label className="flex items-center gap-3 cursor-pointer mb-4">
+              <div className="relative flex-shrink-0">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={businessHours.enabled}
+                  onChange={(e) => setBusinessHours(prev => ({ ...prev, enabled: e.target.checked }))}
+                />
+                <div className={clsx(
+                  'w-10 h-5 rounded-full transition-colors',
+                  businessHours.enabled ? 'bg-orange-500' : 'bg-gray-200'
+                )} />
+                <div className={clsx(
+                  'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
+                  businessHours.enabled && 'translate-x-5'
+                )} />
+              </div>
+              <span className="text-sm font-medium text-gray-900">
+                {businessHours.enabled ? 'Ativado' : 'Desativado (envia a qualquer hora)'}
+              </span>
+            </label>
+
+            {businessHours.enabled && (
+              <div className="space-y-2">
+                {DAY_KEYS.map(day => {
+                  const conf = businessHours[day];
+                  return (
+                    <div key={day} className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 w-28 flex-shrink-0 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={conf.enabled}
+                          onChange={(e) => updateDay(day, 'enabled', e.target.checked)}
+                          className="rounded border-gray-300 text-orange-500"
+                        />
+                        <span className={clsx(
+                          'text-sm',
+                          conf.enabled ? 'text-gray-900 font-medium' : 'text-gray-400'
+                        )}>
+                          {DAY_LABELS[day]}
+                        </span>
+                      </label>
+
+                      {conf.enabled ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            className="input py-1 px-2 text-sm w-28"
+                            value={conf.open}
+                            onChange={(e) => updateDay(day, 'open', e.target.value)}
+                          />
+                          <span className="text-gray-400 text-sm">até</span>
+                          <input
+                            type="time"
+                            className="input py-1 px-2 text-sm w-28"
+                            value={conf.close}
+                            onChange={(e) => updateDay(day, 'close', e.target.value)}
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">Fechado</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <button type="submit" className="btn-primary" disabled={saving}>
+            <Save className="w-4 h-4" />
+            {saved ? 'Salvo!' : saving ? 'Salvando...' : 'Salvar alterações'}
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}

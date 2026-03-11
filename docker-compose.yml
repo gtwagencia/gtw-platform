@@ -1,0 +1,104 @@
+version: '3.9'
+
+# =============================================================
+# GTW Platform — Docker Swarm Stack
+# Imagens buildadas localmente no servidor com build.sh
+# Deploy via Portainer — domínio: app.gtw.digital
+# =============================================================
+
+networks:
+  network_public:
+    external: true
+  gtw_internal:
+    driver: overlay
+    internal: true   # Postgres não fica exposto ao Traefik
+
+volumes:
+  gtw_pgdata:
+    driver: local
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  gtw-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:       gtw_platform
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - gtw_pgdata:/var/lib/postgresql/data
+    networks:
+      - gtw_internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 10s
+      resources:
+        limits:
+          memory: 512M
+
+  # ── Backend ────────────────────────────────────────────────
+  gtw-backend:
+    image: gtw-backend:latest
+    environment:
+      NODE_ENV:     production
+      PORT:         "4000"
+      DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@gtw-postgres:5432/gtw_platform
+      JWT_SECRET:   ${JWT_SECRET}
+      FRONTEND_URL: https://${DOMAIN}
+    networks:
+      - network_public
+      - gtw_internal
+    depends_on:
+      - gtw-postgres
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 10s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+
+        # Rota API REST
+        - "traefik.http.routers.gtw-api.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.gtw-api.entrypoints=websecure"
+        - "traefik.http.routers.gtw-api.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.gtw-api.priority=20"
+        - "traefik.http.services.gtw-api.loadbalancer.server.port=4000"
+
+        # Rota Socket.io (WebSocket) — sticky session obrigatória
+        - "traefik.http.routers.gtw-ws.rule=Host(`${DOMAIN}`) && PathPrefix(`/socket.io`)"
+        - "traefik.http.routers.gtw-ws.entrypoints=websecure"
+        - "traefik.http.routers.gtw-ws.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.gtw-ws.priority=15"
+        - "traefik.http.services.gtw-ws.loadbalancer.server.port=4000"
+        - "traefik.http.services.gtw-ws.loadbalancer.sticky.cookie=true"
+        - "traefik.http.services.gtw-ws.loadbalancer.sticky.cookie.name=gtw_ws_sticky"
+
+  # ── Frontend ───────────────────────────────────────────────
+  gtw-frontend:
+    image: gtw-frontend:latest
+    environment:
+      NODE_ENV:            production
+      NEXT_PUBLIC_API_URL: "https://${DOMAIN}/api/v1"
+    networks:
+      - network_public
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 10s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+        - "traefik.http.routers.gtw-frontend.rule=Host(`${DOMAIN}`)"
+        - "traefik.http.routers.gtw-frontend.entrypoints=websecure"
+        - "traefik.http.routers.gtw-frontend.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.gtw-frontend.priority=1"
+        - "traefik.http.services.gtw-frontend.loadbalancer.server.port=3000"

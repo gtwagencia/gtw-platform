@@ -1,0 +1,182 @@
+version: '3.9'
+
+# ============================================================
+# GTW Platform — Docker Swarm Stack
+#
+# Pré-requisitos:
+#   1. Swarm inicializado: docker swarm init
+#   2. Imagens buildadas e no registry (ver deploy.sh)
+#   3. Secrets criados (ver deploy.sh)
+#   4. Volume NFS ou driver compartilhado se multi-node
+# ============================================================
+
+networks:
+  gtw_net:
+    driver: overlay
+    attachable: true
+
+volumes:
+  pgdata:
+    driver: local
+
+secrets:
+  db_password:
+    external: true
+  jwt_secret:
+    external: true
+  ssl_cert:
+    external: true
+  ssl_key:
+    external: true
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:            gtw_platform
+      POSTGRES_USER:          postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - gtw_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager      # mantém no manager p/ garantir volume local
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gtw_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Backend ─────────────────────────────────────────────
+  backend:
+    image: ${REGISTRY:-registry.seudominio.com}/gtw-backend:${TAG:-latest}
+    environment:
+      NODE_ENV:     production
+      PORT:         4000
+      FRONTEND_URL: ${FRONTEND_URL:-https://seudominio.com}
+      # A senha do banco é lida pelo arquivo de secret
+      DATABASE_URL: postgresql://postgres_secret@postgres:5432/gtw_platform
+    secrets:
+      - db_password
+      - jwt_secret
+    networks:
+      - gtw_net
+    depends_on:
+      - postgres
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ── Frontend ────────────────────────────────────────────
+  frontend:
+    image: ${REGISTRY:-registry.seudominio.com}/gtw-frontend:${TAG:-latest}
+    environment:
+      NEXT_PUBLIC_API_URL: ${FRONTEND_URL:-https://seudominio.com}/api/v1
+    networks:
+      - gtw_net
+    depends_on:
+      - backend
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  # ── Nginx (reverse proxy + SSL termination) ─────────────
+  nginx:
+    image: ${REGISTRY:-registry.seudominio.com}/gtw-nginx:${TAG:-latest}
+    ports:
+      - target:    80
+        published: 80
+        protocol:  tcp
+        mode:      host
+      - target:    443
+        published: 443
+        protocol:  tcp
+        mode:      host
+    secrets:
+      - ssl_cert
+      - ssl_key
+    networks:
+      - gtw_net
+    depends_on:
+      - backend
+      - frontend
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 64M
