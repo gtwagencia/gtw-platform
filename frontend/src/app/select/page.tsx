@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '@/store/workspace';
 import type { OrgSummary, Workspace } from '@/types';
 import { MessageSquare, Building2, ArrowRight, ChevronLeft, Plus, Loader } from 'lucide-react';
 import clsx from 'clsx';
+import api from '@/lib/api';
 
 type Step = 'org' | 'workspace';
 
@@ -15,8 +16,11 @@ export default function SelectPage() {
   const { user, currentOrg, setOrg, setWorkspace, accessToken } = useAuth();
   const { workspaces, loading, fetchForOrg } = useWorkspaceStore();
 
-  const [step,        setStep]        = useState<Step>('org');
-  const [selectedOrg, setSelectedOrg] = useState<OrgSummary | null>(currentOrg);
+  const [step,          setStep]          = useState<Step>('org');
+  const [selectedOrg,   setSelectedOrg]   = useState<OrgSummary | null>(currentOrg);
+  const [showCreate,    setShowCreate]    = useState(false);
+  const [newWsName,     setNewWsName]     = useState('');
+  const [saving,        setSaving]        = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -41,6 +45,21 @@ export default function SelectPage() {
       return;
     }
     setStep('workspace');
+  }
+
+  async function handleCreateWorkspace(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedOrg || !newWsName.trim()) return;
+    setSaving(true);
+    try {
+      await api.post(`/orgs/${selectedOrg.id}/workspaces`, { name: newWsName.trim() });
+      setNewWsName('');
+      setShowCreate(false);
+      const list = await fetchForOrg(selectedOrg.id);
+      if (list.length === 1) handleWorkspaceSelect(list[0]);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleWorkspaceSelect(ws: Workspace) {
@@ -131,10 +150,61 @@ export default function SelectPage() {
                     <Plus className="w-6 h-6 text-gray-400" />
                   </div>
                   <p className="text-sm text-gray-500 mb-4">Nenhum workspace encontrado nesta organização.</p>
-                  <p className="text-xs text-gray-400">Peça ao administrador para criar um workspace.</p>
+                  {selectedOrg && ['owner', 'admin'].includes(selectedOrg.role) ? (
+                    showCreate ? (
+                      <form onSubmit={handleCreateWorkspace} className="flex gap-2 mt-2">
+                        <input
+                          autoFocus
+                          className="input flex-1 text-sm"
+                          placeholder="Nome do workspace"
+                          value={newWsName}
+                          onChange={e => setNewWsName(e.target.value)}
+                          required
+                        />
+                        <button type="submit" className="btn-primary text-sm" disabled={saving}>
+                          {saving ? <Loader className="w-4 h-4 animate-spin" /> : 'Criar'}
+                        </button>
+                        <button type="button" className="btn-secondary text-sm" onClick={() => setShowCreate(false)}>
+                          Cancelar
+                        </button>
+                      </form>
+                    ) : (
+                      <button className="btn-primary text-sm" onClick={() => setShowCreate(true)}>
+                        <Plus className="w-4 h-4" />
+                        Criar workspace
+                      </button>
+                    )
+                  ) : (
+                    <p className="text-xs text-gray-400">Peça ao administrador para criar um workspace.</p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {selectedOrg && ['owner', 'admin'].includes(selectedOrg.role) && (
+                    showCreate ? (
+                      <form onSubmit={handleCreateWorkspace} className="flex gap-2 mb-3">
+                        <input
+                          autoFocus
+                          className="input flex-1 text-sm"
+                          placeholder="Nome do workspace"
+                          value={newWsName}
+                          onChange={e => setNewWsName(e.target.value)}
+                          required
+                        />
+                        <button type="submit" className="btn-primary text-sm" disabled={saving}>
+                          {saving ? <Loader className="w-4 h-4 animate-spin" /> : 'Criar'}
+                        </button>
+                        <button type="button" className="btn-secondary text-sm" onClick={() => setShowCreate(false)}>
+                          Cancelar
+                        </button>
+                      </form>
+                    ) : (
+                      <button className="btn-secondary text-sm w-full mb-1" onClick={() => setShowCreate(true)}>
+                        <Plus className="w-4 h-4" />
+                        Novo workspace
+                      </button>
+                    )
+                  )}
                   {workspaces.map((ws) => (
                     <button
                       key={ws.id}
