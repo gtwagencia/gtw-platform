@@ -7,7 +7,6 @@ const svc = require('./conversations.service');
 
 const router = Router({ mergeParams: true });
 
-// Helper: monta o objeto caller a partir da request
 function getCaller(req) {
   return {
     isSuperAdmin:  req.user.isSuperAdmin,
@@ -19,14 +18,11 @@ function getCaller(req) {
 
 router.get('/', authenticate, workspaceContext, async (req, res, next) => {
   try {
-    const { status, inboxId, assigneeId, departmentId, page, limit } = req.query;
+    const { status, inboxId, assigneeId, departmentId, contactId, labelId, page, limit } = req.query;
     const result = await svc.list(
       req.params.workspaceId,
-      {
-        status, inboxId, assigneeId, departmentId,
-        page:  parseInt(page,  10) || 1,
-        limit: parseInt(limit, 10) || 30,
-      },
+      { status, inboxId, assigneeId, departmentId, contactId, labelId,
+        page: parseInt(page, 10) || 1, limit: parseInt(limit, 10) || 30 },
       getCaller(req)
     );
     res.json(result);
@@ -36,9 +32,7 @@ router.get('/', authenticate, workspaceContext, async (req, res, next) => {
 router.get('/:conversationId', authenticate, workspaceContext, async (req, res, next) => {
   try {
     const conv = await svc.getById(
-      req.params.conversationId,
-      req.params.workspaceId,
-      getCaller(req)
+      req.params.conversationId, req.params.workspaceId, getCaller(req)
     );
     if (!conv) return res.status(404).json({ error: 'Conversa não encontrada' });
     res.json(conv);
@@ -47,9 +41,6 @@ router.get('/:conversationId', authenticate, workspaceContext, async (req, res, 
 
 router.put('/:conversationId', authenticate, workspaceContext, async (req, res, next) => {
   try {
-    const { status, assigneeId, dealId, departmentId } = req.body;
-
-    // Agente só pode atualizar status de conversas suas
     const caller = getCaller(req);
     if (caller.workspaceRole === 'agent' && !caller.isSuperAdmin
         && !['owner','admin'].includes(caller.orgRole)) {
@@ -58,14 +49,27 @@ router.put('/:conversationId', authenticate, workspaceContext, async (req, res, 
     }
 
     const updated = await svc.update(
-      req.params.conversationId,
-      req.params.workspaceId,
-      { status, assigneeId, dealId, departmentId }
+      req.params.conversationId, req.params.workspaceId, req.body
     );
     req.app.get('io')
       ?.to(`ws:${req.params.workspaceId}`)
       .emit('conversation:updated', updated);
     res.json(updated);
+  } catch (err) { next(err); }
+});
+
+// CSAT endpoint — can be called without full auth (customer-facing link)
+router.post('/:conversationId/csat', async (req, res, next) => {
+  try {
+    const { rating, comment } = req.body;
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating deve ser entre 1 e 5' });
+    }
+    const updated = await svc.update(
+      req.params.conversationId, req.params.workspaceId,
+      { csatRating: parseInt(rating, 10), csatComment: comment || null }
+    );
+    res.json({ ok: true, csatRating: updated.csat_rating });
   } catch (err) { next(err); }
 });
 

@@ -50,4 +50,11 @@ router.delete('/:contactId', authenticate, workspaceContext, async (req, res, ne
   } catch (err) { next(err); }
 });
 
+router.get('/:contactId/conversations', authenticate, workspaceContext, async (req, res, next) => {
+  try {
+    const convs = await svc.listConversations(req.params.contactId, req.params.workspaceId);
+    res.json(convs);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

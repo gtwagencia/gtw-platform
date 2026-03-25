@@ -26,11 +26,9 @@ async function list(conversationId, { page = 1, limit = 50 } = {}) {
   return { data: r.rows, total, page, limit };
 }
 
-async function send(conversationId, senderId, { content, messageType = 'text', mediaUrl }) {
-  // Get conversation with inbox details
+async function send(conversationId, senderId, { content, messageType = 'text', mediaUrl, isPrivate = false }) {
   const convRes = await query(
-    `SELECT c.*, i.evolution_api_url, i.evolution_api_key, i.evolution_instance,
-            c.remote_jid, c.workspace_id
+    `SELECT c.*, i.evolution_api_url, i.evolution_api_key, i.evolution_instance, c.remote_jid, c.workspace_id
      FROM conversations c
      JOIN inboxes i ON i.id = c.inbox_id
      WHERE c.id = $1`,
@@ -39,50 +37,46 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
   if (!convRes.rows.length) throw Object.assign(new Error('Conversa não encontrada'), { status: 404 });
   const conv = convRes.rows[0];
 
-  // Insert message first (optimistic)
   const msgRes = await query(
     `INSERT INTO messages
-       (conversation_id, direction, message_type, content, media_url, sender_id, status)
-     VALUES ($1,'outbound',$2,$3,$4,$5,'sent') RETURNING *`,
-    [conversationId, messageType, content || null, mediaUrl || null, senderId]
+       (conversation_id, direction, message_type, content, media_url, sender_id, status, is_private)
+     VALUES ($1,'outbound',$2,$3,$4,$5,'sent',$6) RETURNING *`,
+    [conversationId, messageType, content || null, mediaUrl || null, senderId, isPrivate]
   );
   const message = msgRes.rows[0];
 
-  // Update conversation last message
-  await convSvc.refreshLastMessage(conversationId);
+  // Only public messages update last_message and trigger real WhatsApp send
+  if (!isPrivate) {
+    await convSvc.refreshLastMessage(conversationId);
 
-  // Track first response time (only if not yet set)
-  await query(
-    `UPDATE conversations
-     SET first_response_at = NOW(),
-         response_time_seconds = EXTRACT(EPOCH FROM (NOW() - last_inbound_at))::int
-     WHERE id = $1
-       AND first_response_at IS NULL
-       AND last_inbound_at IS NOT NULL`,
-    [conversationId]
-  );
-
-  // Send via Evolution API
-  if (conv.evolution_api_url && conv.evolution_instance) {
-    try {
-      await axios.post(
-        `${conv.evolution_api_url}/message/sendText/${conv.evolution_instance}`,
-        {
-          number:  conv.remote_jid,
-          textMessage: { text: content },
-        },
-        {
-          headers: { apikey: conv.evolution_api_key },
-          timeout: 10000,
-        }
-      );
-    } catch (err) {
-      // Mark as failed but don't throw — message is already saved
+    // Track first response time + reset bot_active when a real agent responds
+    if (senderId) {
       await query(
-        'UPDATE messages SET status = $1 WHERE id = $2',
-        ['failed', message.id]
+        `UPDATE conversations
+         SET first_response_at = COALESCE(first_response_at, NOW()),
+             response_time_seconds = CASE
+               WHEN first_response_at IS NULL AND last_inbound_at IS NOT NULL
+               THEN EXTRACT(EPOCH FROM (NOW() - last_inbound_at))::int
+               ELSE response_time_seconds
+             END,
+             bot_active = false
+         WHERE id = $1`,
+        [conversationId]
       );
-      message.status = 'failed';
+    }
+
+    // Send via Evolution API
+    if (conv.evolution_api_url && conv.evolution_instance) {
+      try {
+        await axios.post(
+          `${conv.evolution_api_url}/message/sendText/${conv.evolution_instance}`,
+          { number: conv.remote_jid, textMessage: { text: content } },
+          { headers: { apikey: conv.evolution_api_key }, timeout: 10000 }
+        );
+      } catch {
+        await query('UPDATE messages SET status = $1 WHERE id = $2', ['failed', message.id]);
+        message.status = 'failed';
+      }
     }
   }
 

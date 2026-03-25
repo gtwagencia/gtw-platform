@@ -20,17 +20,16 @@ router.get('/', authenticate, async (req, res, next) => {
 
 router.post('/', authenticate, async (req, res, next) => {
   try {
-    const { content, messageType, mediaUrl } = req.body;
+    const { content, messageType, mediaUrl, isPrivate } = req.body;
     if (!content && !mediaUrl) {
       return res.status(400).json({ error: 'content ou mediaUrl é obrigatório' });
     }
     const message = await svc.send(
       req.params.conversationId,
       req.user.sub,
-      { content, messageType, mediaUrl }
+      { content, messageType, mediaUrl, isPrivate: Boolean(isPrivate) }
     );
 
-    // Broadcast to all agents watching this conversation
     req.app.get('io')
       ?.to(`conv:${req.params.conversationId}`)
       .emit('message:new', message);

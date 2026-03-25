@@ -37,12 +37,12 @@ async function create(workspaceId, { name, color, description }) {
   return r.rows[0];
 }
 
-async function update(deptId, workspaceId, { name, color, description }) {
+async function update(deptId, workspaceId, body) {
   const map = { name: 'name', color: 'color', description: 'description' };
   const fields = []; const vals = []; let idx = 1;
 
   for (const [k, col] of Object.entries(map)) {
-    if (arguments[2][k] !== undefined) { fields.push(`${col} = $${idx++}`); vals.push(arguments[2][k]); }
+    if (body[k] !== undefined) { fields.push(`${col} = $${idx++}`); vals.push(body[k]); }
   }
   if (!fields.length) throw Object.assign(new Error('Nenhum campo'), { status: 400 });
 

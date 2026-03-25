@@ -10,18 +10,8 @@ const logger  = require('../utils/logger');
 
 const DAY_NAMES = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
 
-/**
- * Check if the current time is within business hours for a workspace.
- * businessHours format:
- * {
- *   enabled: true,
- *   timezone: "America/Sao_Paulo",
- *   monday: { open: "08:00", close: "18:00", enabled: true },
- *   ...
- * }
- */
 function isWithinBusinessHours(businessHours) {
-  if (!businessHours?.enabled) return true; // if not configured, allow anytime
+  if (!businessHours?.enabled) return true;
 
   const tz       = businessHours.timezone || 'America/Sao_Paulo';
   const now      = new Date();
@@ -41,22 +31,17 @@ function isWithinBusinessHours(businessHours) {
   return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
 }
 
-// ── Follow-up triggers ─────────────────────────────────────────────────────
+// ── Follow-up job ──────────────────────────────────────────────────────────
 
-/**
- * Find stalled conversations and send follow-up messages.
- * trigger: '30min' | '1day' | '3day'
- */
 async function runFollowUp(trigger) {
   const intervals = {
-    '30min': { minutes: 30,   max: 90   },  // 30–90 min ago
-    '1day':  { minutes: 1440, max: 1560 },  // 23–26 hours ago
-    '3day':  { minutes: 4320, max: 4440 },  // 71–74 hours ago
+    '30min': { minutes: 30,   max: 90   },
+    '1day':  { minutes: 1440, max: 1560 },
+    '3day':  { minutes: 4320, max: 4440 },
   };
 
   const { minutes, max } = intervals[trigger];
 
-  // Find workspaces with follow-up enabled
   const wsRes = await query(
     `SELECT id, anthropic_api_key, business_hours, follow_up_enabled
      FROM workspaces
@@ -64,25 +49,24 @@ async function runFollowUp(trigger) {
   );
 
   for (const ws of wsRes.rows) {
-    // Check business hours
     if (!isWithinBusinessHours(ws.business_hours)) {
       logger.debug('Follow-up skipped: outside business hours', { workspaceId: ws.id });
       continue;
     }
 
-    // Find stalled conversations (inbound with no outbound response since)
     const convRes = await query(
       `SELECT c.id, c.workspace_id, c.assignee_id
        FROM conversations c
        WHERE c.workspace_id = $1
          AND c.status = 'open'
          AND c.last_inbound_at IS NOT NULL
-         AND c.last_inbound_at <= NOW() - ($2 || ' minutes')::interval
-         AND c.last_inbound_at >= NOW() - ($3 || ' minutes')::interval
+         AND c.last_inbound_at <= NOW() - ($2 * INTERVAL '1 minute')
+         AND c.last_inbound_at >= NOW() - ($3 * INTERVAL '1 minute')
          AND NOT EXISTS (
            SELECT 1 FROM messages m
            WHERE m.conversation_id = c.id
              AND m.direction = 'outbound'
+             AND m.is_private = false
              AND m.created_at > c.last_inbound_at
          )
          AND NOT EXISTS (
@@ -98,17 +82,13 @@ async function runFollowUp(trigger) {
 
     for (const conv of convRes.rows) {
       try {
-        // Generate follow-up message
         const messageText = await aiSvc.generateFollowUp(conv.id, trigger, ws.anthropic_api_key);
         if (!messageText) continue;
 
-        // Send message (as system/bot — no sender_id)
         await msgSvc.send(conv.id, conv.assignee_id || null, {
-          content: messageText,
-          messageType: 'text',
+          content: messageText, messageType: 'text',
         });
 
-        // Log follow-up
         await query(
           `INSERT INTO follow_up_logs
              (conversation_id, workspace_id, trigger_type, message_content, status)
@@ -118,7 +98,6 @@ async function runFollowUp(trigger) {
 
         logger.info('Follow-up sent', { conversationId: conv.id, trigger });
       } catch (err) {
-        // Log failure but continue
         await query(
           `INSERT INTO follow_up_logs
              (conversation_id, workspace_id, trigger_type, message_content, status, error_message)
@@ -134,9 +113,6 @@ async function runFollowUp(trigger) {
 
 // ── AI Analysis job ────────────────────────────────────────────────────────
 
-/**
- * Periodically analyze deals that haven't been analyzed in the last hour.
- */
 async function runAiAnalysis() {
   const r = await query(
     `SELECT d.id, d.workspace_id
@@ -157,25 +133,47 @@ async function runAiAnalysis() {
     } catch (err) {
       logger.warn('AI analysis failed', { dealId: deal.id, err: err.message });
     }
-    // Small delay to avoid rate limits
     await new Promise(resolve => setTimeout(resolve, 500));
+  }
+}
+
+// ── SLA breach detection ───────────────────────────────────────────────────
+
+async function runSlaCheck() {
+  // Find workspaces with SLA configured
+  const wsRes = await query(
+    `SELECT id, sla_response_minutes FROM workspaces
+     WHERE sla_response_minutes IS NOT NULL AND sla_response_minutes > 0`
+  );
+
+  for (const ws of wsRes.rows) {
+    await query(
+      `UPDATE conversations
+       SET sla_breached = true
+       WHERE workspace_id = $1
+         AND status = 'open'
+         AND sla_breached = false
+         AND first_response_at IS NULL
+         AND created_at <= NOW() - ($2 * INTERVAL '1 minute')`,
+      [ws.id, ws.sla_response_minutes]
+    );
   }
 }
 
 // ── Schedule jobs ──────────────────────────────────────────────────────────
 
 function startJobs() {
-  // 30-minute follow-up check — every 5 minutes
+  // 30-minute follow-up — every 5 minutes
   cron.schedule('*/5 * * * *', () => {
     runFollowUp('30min').catch(err => logger.error('followUp 30min error', { err: err.message }));
   });
 
-  // 1-day follow-up check — every 30 minutes
+  // 1-day follow-up — every 30 minutes
   cron.schedule('*/30 * * * *', () => {
     runFollowUp('1day').catch(err => logger.error('followUp 1day error', { err: err.message }));
   });
 
-  // 3-day follow-up check — every hour
+  // 3-day follow-up — every hour
   cron.schedule('0 * * * *', () => {
     runFollowUp('3day').catch(err => logger.error('followUp 3day error', { err: err.message }));
   });
@@ -185,7 +183,12 @@ function startJobs() {
     runAiAnalysis().catch(err => logger.error('AI analysis error', { err: err.message }));
   });
 
-  logger.info('Background jobs started (follow-up + AI analysis)');
+  // SLA breach check — every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    runSlaCheck().catch(err => logger.error('SLA check error', { err: err.message }));
+  });
+
+  logger.info('Background jobs started (follow-up + AI analysis + SLA check)');
 }
 
 module.exports = { startJobs };

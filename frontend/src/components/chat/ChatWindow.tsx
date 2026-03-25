@@ -7,10 +7,10 @@ import clsx from 'clsx';
 import api from '@/lib/api';
 import { useAuth } from '@/store/auth';
 import { joinConversation, getSocket } from '@/lib/socket';
-import type { Conversation, Message } from '@/types';
+import type { Conversation, Message, Label, CannedResponse } from '@/types';
 import {
   Send, Check, CheckCheck, AlertCircle,
-  Archive, UserCheck, ChevronDown,
+  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText,
 } from 'lucide-react';
 
 interface Props {
@@ -20,21 +20,41 @@ interface Props {
 
 interface Agent { id: string; name: string; avatar_url: string | null; }
 
+type Mode = 'reply' | 'note';
+
 export default function ChatWindow({ conversation, onStatusChange }: Props) {
   const { user, currentWorkspace } = useAuth();
 
-  const [messages,    setMessages]    = useState<Message[]>([]);
-  const [text,        setText]        = useState('');
-  const [sending,     setSending]     = useState(false);
-  const [loading,     setLoading]     = useState(true);
-  const [agents,      setAgents]      = useState<Agent[]>([]);
-  const [assignOpen,  setAssignOpen]  = useState(false);
+  const [messages,      setMessages]      = useState<Message[]>([]);
+  const [text,          setText]          = useState('');
+  const [mode,          setMode]          = useState<Mode>('reply');
+  const [sending,       setSending]       = useState(false);
+  const [loading,       setLoading]       = useState(true);
+  const [agents,        setAgents]        = useState<Agent[]>([]);
+  const [labels,        setLabels]        = useState<Label[]>([]);
+  const [convLabels,    setConvLabels]    = useState<Label[]>([]);
+  const [canned,        setCanned]        = useState<CannedResponse[]>([]);
+  const [cannedSearch,  setCannedSearch]  = useState('');
+  const [showCanned,    setShowCanned]    = useState(false);
+  const [assignOpen,    setAssignOpen]    = useState(false);
+  const [labelOpen,     setLabelOpen]     = useState(false);
+  const [showCsat,      setShowCsat]      = useState(false);
+  const [csatRating,    setCsatRating]    = useState(0);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templates,     setTemplates]     = useState<{name: string; language: string; status: string; components: unknown[]}[]>([]);
+  const [tplLoading,    setTplLoading]    = useState(false);
   const bottomRef  = useRef<HTMLDivElement>(null);
   const assignRef  = useRef<HTMLDivElement>(null);
+  const labelRef   = useRef<HTMLDivElement>(null);
+  const textRef    = useRef<HTMLTextAreaElement>(null);
 
-  // ── Load messages + agents ─────────────────────────────────────
+  // ── Load messages ──────────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
+    setMode('reply');
+    setText('');
+    setShowCanned(false);
+
     api.get(`/conversations/${conversation.id}/messages`)
       .then(({ data }) => setMessages(data.data))
       .finally(() => setLoading(false));
@@ -54,39 +74,69 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     return () => { socket.off('message:new', onNew); };
   }, [conversation.id]);
 
-  // Load workspace members for assignment
+  // Load agents, labels, canned
   useEffect(() => {
     if (!currentWorkspace) return;
     api.get(`/orgs/${currentWorkspace.org_id}/workspaces/${currentWorkspace.id}/members`)
-      .then(({ data }) => setAgents(data))
-      .catch(() => {});
+      .then(({ data }) => setAgents(data)).catch(() => {});
+    api.get(`/workspaces/${currentWorkspace.id}/labels`)
+      .then(({ data }) => setLabels(data)).catch(() => {});
+    api.get(`/workspaces/${currentWorkspace.id}/canned`)
+      .then(({ data }) => setCanned(data)).catch(() => {});
   }, [currentWorkspace]);
 
-  // Close assign dropdown on outside click
+  useEffect(() => {
+    setConvLabels(conversation.labels || []);
+  }, [conversation.labels]);
+
+  useEffect(() => {
+    if (!currentWorkspace || !showCanned) return;
+    api.get(`/workspaces/${currentWorkspace.id}/canned`, { params: { search: cannedSearch } })
+      .then(({ data }) => setCanned(data)).catch(() => {});
+  }, [cannedSearch, currentWorkspace, showCanned]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Close dropdowns on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (assignRef.current && !assignRef.current.contains(e.target as Node)) {
-        setAssignOpen(false);
-      }
+      if (assignRef.current && !assignRef.current.contains(e.target as Node)) setAssignOpen(false);
+      if (labelRef.current  && !labelRef.current.contains(e.target as Node))  setLabelOpen(false);
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  function handleTextChange(val: string) {
+    setText(val);
+    if (val.startsWith('/') && mode === 'reply') {
+      setCannedSearch(val.slice(1));
+      setShowCanned(true);
+    } else {
+      setShowCanned(false);
+    }
+  }
+
+  const filteredCanned = canned.filter(c =>
+    !cannedSearch ||
+    c.shortcut.includes(cannedSearch.toLowerCase()) ||
+    c.content.toLowerCase().includes(cannedSearch.toLowerCase())
+  );
 
   // ── Actions ────────────────────────────────────────────────────
 
   async function sendMessage(e: FormEvent) {
     e.preventDefault();
     if (!text.trim() || sending) return;
-    const content = text.trim();
+    const content   = text.trim();
+    const isPrivate = mode === 'note';
     setText('');
+    setShowCanned(false);
     setSending(true);
     try {
-      const { data } = await api.post(`/conversations/${conversation.id}/messages`, { content });
+      const { data } = await api.post(`/conversations/${conversation.id}/messages`, { content, isPrivate });
       setMessages((prev) => [...prev, data]);
     } catch {
       setText(content);
@@ -112,6 +162,51 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     setAssignOpen(false);
   }
 
+  async function toggleLabel(label: Label) {
+    const has = convLabels.some(l => l.id === label.id);
+    if (has) {
+      await api.delete(`/workspaces/${conversation.workspace_id}/labels/conversation/${conversation.id}/${label.id}`);
+      setConvLabels(prev => prev.filter(l => l.id !== label.id));
+    } else {
+      await api.post(`/workspaces/${conversation.workspace_id}/labels/conversation/${conversation.id}`, { labelId: label.id });
+      setConvLabels(prev => [...prev, label]);
+    }
+  }
+
+  async function openTemplates() {
+    setShowTemplates(true);
+    if (templates.length || !currentWorkspace) return;
+    setTplLoading(true);
+    try {
+      const { data } = await api.get(`/workspaces/${currentWorkspace.id}/templates`, {
+        params: { inboxId: conversation.inbox_id },
+      });
+      setTemplates(data);
+    } finally {
+      setTplLoading(false);
+    }
+  }
+
+  async function sendTemplate(templateName: string, language: string) {
+    if (!currentWorkspace) return;
+    await api.post(`/workspaces/${currentWorkspace.id}/templates/send`, {
+      conversationId: conversation.id,
+      templateName,
+      language,
+    });
+    setShowTemplates(false);
+  }
+
+  async function submitCsat() {
+    if (!csatRating) return;
+    await api.post(
+      `/workspaces/${conversation.workspace_id}/conversations/${conversation.id}/csat`,
+      { rating: csatRating }
+    );
+    setShowCsat(false);
+    onStatusChange({ ...conversation, csat_rating: csatRating });
+  }
+
   const statusIcon = (s: string) => {
     if (s === 'sent')      return <Check       className="w-3 h-3" />;
     if (s === 'delivered') return <CheckCheck  className="w-3 h-3" />;
@@ -133,26 +228,94 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-gray-900 text-sm truncate">
+          <div className="font-medium text-gray-900 text-sm truncate flex items-center gap-2">
             {conversation.contact_name}
+            {conversation.sla_breached && (
+              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">SLA</span>
+            )}
+            {conversation.bot_active && (
+              <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">Bot</span>
+            )}
           </div>
           <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
             <span>{conversation.contact_phone}</span>
             <span>·</span>
             <span>{conversation.inbox_name}</span>
-            {(conversation as any).department_name && (
+            {conversation.department_name && (
               <>
                 <span>·</span>
-                <span
-                  className="font-medium"
-                  style={{ color: (conversation as any).department_color || '#6366f1' }}
-                >
-                  {(conversation as any).department_name}
+                <span className="font-medium" style={{ color: conversation.department_color || '#6366f1' }}>
+                  {conversation.department_name}
                 </span>
               </>
             )}
           </div>
+          {convLabels.length > 0 && (
+            <div className="flex gap-1 flex-wrap mt-0.5">
+              {convLabels.map(l => (
+                <span
+                  key={l.id}
+                  className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                  style={{ backgroundColor: l.color + '20', color: l.color }}
+                >
+                  {l.name}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Labels */}
+        <div className="relative flex-shrink-0" ref={labelRef}>
+          <button
+            onClick={() => setLabelOpen(!labelOpen)}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            title="Etiquetas"
+          >
+            <Tag className="w-4 h-4" />
+          </button>
+          {labelOpen && labels.length > 0 && (
+            <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-200 z-20 p-1.5">
+              {labels.map(l => {
+                const active = convLabels.some(cl => cl.id === l.id);
+                return (
+                  <button
+                    key={l.id}
+                    onClick={() => toggleLabel(l)}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm rounded-lg hover:bg-gray-50 text-left"
+                  >
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: l.color }} />
+                    <span className="flex-1 truncate">{l.name}</span>
+                    {active && <Check className="w-3.5 h-3.5 text-brand-600" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Templates HSM */}
+        <button
+          onClick={openTemplates}
+          className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          title="Enviar template HSM"
+        >
+          <FileText className="w-4 h-4" />
+        </button>
+
+        {/* CSAT */}
+        <button
+          onClick={() => setShowCsat(true)}
+          className={clsx(
+            'flex-shrink-0 p-1.5 rounded-lg transition-colors',
+            conversation.csat_rating
+              ? 'text-yellow-500 hover:bg-yellow-50'
+              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+          )}
+          title={conversation.csat_rating ? `CSAT: ${conversation.csat_rating}/5` : 'Registrar CSAT'}
+        >
+          <Star className={clsx('w-4 h-4', conversation.csat_rating && 'fill-yellow-400')} />
+        </button>
 
         {/* Assign agent */}
         <div className="relative flex-shrink-0" ref={assignRef}>
@@ -176,12 +339,9 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
               <div className="p-1">
                 <button
                   onClick={() => assignTo(null)}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-50
-                             rounded-lg flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 rounded-lg flex items-center gap-2"
                 >
-                  <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 text-xs">
-                    —
-                  </div>
+                  <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 text-xs">—</div>
                   Remover atribuição
                 </button>
                 {agents.map((agent) => (
@@ -190,9 +350,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                     onClick={() => assignTo(agent.id)}
                     className={clsx(
                       'w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded-lg flex items-center gap-2',
-                      conversation.assignee_id === agent.id
-                        ? 'text-brand-700 font-medium'
-                        : 'text-gray-700'
+                      conversation.assignee_id === agent.id ? 'text-brand-700 font-medium' : 'text-gray-700'
                     )}
                   >
                     <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center
@@ -200,9 +358,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                       {agent.name[0]?.toUpperCase()}
                     </div>
                     <span className="truncate">{agent.name}</span>
-                    {conversation.assignee_id === agent.id && (
-                      <Check className="w-3.5 h-3.5 ml-auto flex-shrink-0" />
-                    )}
+                    {conversation.assignee_id === agent.id && <Check className="w-3.5 h-3.5 ml-auto flex-shrink-0" />}
                   </button>
                 ))}
               </div>
@@ -210,7 +366,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
           )}
         </div>
 
-        {/* Status actions */}
+        {/* Status */}
         <div className="flex items-center gap-1 flex-shrink-0">
           {!isResolved ? (
             <button onClick={() => changeStatus('resolved')} className="btn-secondary text-xs py-1.5 px-3">
@@ -239,43 +395,54 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         ) : (
           messages.map((msg, idx) => {
             const isOut      = msg.direction === 'outbound';
+            const isPrivate  = msg.is_private;
             const prevMsg    = messages[idx - 1];
             const showSender = isOut && msg.sender_name
               && (idx === 0 || prevMsg?.sender_id !== msg.sender_id || prevMsg?.direction !== 'outbound');
             const isMe       = msg.sender_id === user?.id;
 
+            if (isPrivate) {
+              return (
+                <div key={msg.id} className="flex flex-col items-center">
+                  <div className="max-w-md w-full bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2.5 text-sm shadow-sm">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Lock className="w-3 h-3 text-amber-600" />
+                      <span className="text-xs font-medium text-amber-700">Nota interna</span>
+                      {msg.sender_name && (
+                        <span className="text-xs text-amber-600">· {isMe ? 'Você' : msg.sender_name}</span>
+                      )}
+                    </div>
+                    {msg.content && <p className="whitespace-pre-wrap break-words text-gray-800">{msg.content}</p>}
+                    <div className="text-xs text-amber-500 mt-1">
+                      {format(new Date(msg.created_at), 'HH:mm', { locale: ptBR })}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div key={msg.id} className={clsx('flex flex-col', isOut ? 'items-end' : 'items-start')}>
-
-                {/* Sender name — só aparece em outbound quando muda de remetente */}
                 {showSender && (
-                  <span className={clsx(
-                    'text-xs font-medium mb-1 px-1',
-                    isMe ? 'text-brand-600' : 'text-purple-600'
-                  )}>
+                  <span className={clsx('text-xs font-medium mb-1 px-1', isMe ? 'text-brand-600' : 'text-purple-600')}>
                     {isMe ? 'Você' : msg.sender_name}
                   </span>
                 )}
-
                 <div className={clsx(
                   'max-w-xs lg:max-w-md xl:max-w-lg rounded-2xl px-4 py-2.5 text-sm shadow-sm',
                   isOut
                     ? isMe
                       ? 'bg-brand-600 text-white rounded-br-sm'
-                      : 'bg-purple-600 text-white rounded-br-sm'   // outro agente
+                      : 'bg-purple-600 text-white rounded-br-sm'
                     : 'bg-white text-gray-900 rounded-bl-sm border border-gray-100'
                 )}>
                   {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                   {msg.media_url && (
-                    <a href={msg.media_url} target="_blank" rel="noopener noreferrer"
-                       className="text-xs underline opacity-75">
+                    <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="text-xs underline opacity-75">
                       Ver mídia
                     </a>
                   )}
-                  <div className={clsx(
-                    'flex items-center justify-end gap-1 mt-1 text-xs',
-                    isOut ? 'text-white/60' : 'text-gray-400'
-                  )}>
+                  <div className={clsx('flex items-center justify-end gap-1 mt-1 text-xs', isOut ? 'text-white/60' : 'text-gray-400')}>
                     <span>{format(new Date(msg.created_at), 'HH:mm', { locale: ptBR })}</span>
                     {isOut && statusIcon(msg.status)}
                   </div>
@@ -287,34 +454,167 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      {/* ── Input ────────────────────────────────────────────── */}
-      <div className="bg-white border-t border-gray-200 px-3 py-2 flex-shrink-0">
-        {/* Sender badge */}
-        {user && (
-          <div className="flex items-center gap-1.5 mb-2">
-            <div className="w-4 h-4 rounded-full bg-brand-600 flex items-center justify-center
-                            text-white text-xs font-bold flex-shrink-0">
-              {user.name[0]?.toUpperCase()}
+      {/* ── Templates Modal ──────────────────────────────────── */}
+      {showTemplates && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowTemplates(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-96 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">Templates HSM</h3>
+              <button onClick={() => setShowTemplates(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <span className="text-xs text-gray-400">Respondendo como <strong className="text-gray-600">{user.name}</strong></span>
+            {tplLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : templates.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-sm">
+                <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                Nenhum template disponível nesta inbox
+              </div>
+            ) : (
+              <div className="overflow-y-auto space-y-2 flex-1">
+                {templates.map((tpl, i) => (
+                  <button
+                    key={i}
+                    onClick={() => sendTemplate(tpl.name, tpl.language)}
+                    className="w-full text-left rounded-xl border border-gray-200 p-3 hover:border-brand-300 hover:bg-brand-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-gray-900 text-sm">{tpl.name}</span>
+                      <span className={clsx(
+                        'text-xs px-1.5 py-0.5 rounded-full',
+                        tpl.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                      )}>
+                        {tpl.status || 'PENDING'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400">{tpl.language}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-        <form onSubmit={sendMessage} className="flex gap-2">
-          <input
-            className="input flex-1"
-            placeholder={isResolved ? 'Conversa resolvida' : 'Digite uma mensagem...'}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={isResolved}
-          />
+        </div>
+      )}
+
+      {/* ── CSAT Modal ────────────────────────────────────────── */}
+      {showCsat && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowCsat(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">Avaliação de atendimento</h3>
+              <button onClick={() => setShowCsat(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">Como foi o atendimento nesta conversa?</p>
+            <div className="flex gap-2 justify-center mb-5">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} onClick={() => setCsatRating(n)} className="transition-transform hover:scale-110">
+                  <Star className={clsx('w-8 h-8', n <= csatRating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300')} />
+                </button>
+              ))}
+            </div>
+            <button onClick={submitCsat} disabled={!csatRating} className="btn-primary w-full">
+              Salvar avaliação
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Input ────────────────────────────────────────────── */}
+      <div className="bg-white border-t border-gray-200 flex-shrink-0">
+        {/* Mode tabs */}
+        <div className="flex border-b border-gray-100 px-3">
           <button
-            type="submit"
-            className="btn-primary px-4"
-            disabled={!text.trim() || sending || isResolved}
+            onClick={() => setMode('reply')}
+            className={clsx(
+              'py-2 px-3 text-xs font-medium transition-colors',
+              mode === 'reply' ? 'text-brand-600 border-b-2 border-brand-600' : 'text-gray-400 hover:text-gray-600'
+            )}
           >
-            <Send className="w-4 h-4" />
+            Responder
           </button>
-        </form>
+          <button
+            onClick={() => setMode('note')}
+            className={clsx(
+              'flex items-center gap-1 py-2 px-3 text-xs font-medium transition-colors',
+              mode === 'note' ? 'text-amber-600 border-b-2 border-amber-500' : 'text-gray-400 hover:text-gray-600'
+            )}
+          >
+            <Lock className="w-3 h-3" />
+            Nota interna
+          </button>
+        </div>
+
+        <div className="px-3 py-2">
+          {user && mode === 'reply' && (
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <div className="w-4 h-4 rounded-full bg-brand-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                {user.name[0]?.toUpperCase()}
+              </div>
+              <span className="text-xs text-gray-400">Respondendo como <strong className="text-gray-600">{user.name}</strong></span>
+            </div>
+          )}
+          {mode === 'note' && (
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Lock className="w-3 h-3 text-amber-500" />
+              <span className="text-xs text-amber-600 font-medium">Visível apenas para agentes</span>
+            </div>
+          )}
+
+          {/* Canned responses autocomplete */}
+          {showCanned && filteredCanned.length > 0 && (
+            <div className="mb-2 max-h-48 overflow-y-auto border border-gray-200 rounded-xl bg-white shadow-lg">
+              {filteredCanned.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => { setText(c.content); setShowCanned(false); textRef.current?.focus(); }}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                >
+                  <div className="text-xs font-semibold text-brand-600">/{c.shortcut}</div>
+                  <div className="text-sm text-gray-700 truncate">{c.content}</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={sendMessage} className="flex gap-2">
+            <textarea
+              ref={textRef}
+              rows={2}
+              className={clsx(
+                'input flex-1 resize-none',
+                mode === 'note' && 'bg-amber-50 border-amber-200 focus:ring-amber-400'
+              )}
+              placeholder={
+                isResolved
+                  ? 'Conversa resolvida'
+                  : mode === 'note'
+                  ? 'Escreva uma nota interna...'
+                  : 'Digite uma mensagem... (use / para respostas prontas)'
+              }
+              value={text}
+              onChange={(e) => handleTextChange(e.target.value)}
+              disabled={isResolved}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e as any); }
+              }}
+            />
+            <button
+              type="submit"
+              className={clsx(
+                'px-4 rounded-xl flex items-center justify-center transition-colors',
+                mode === 'note' ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'btn-primary'
+              )}
+              disabled={!text.trim() || sending || isResolved}
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

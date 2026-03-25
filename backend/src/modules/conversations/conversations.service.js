@@ -2,27 +2,19 @@
 
 const { query } = require('../../config/database');
 
-/**
- * Regras de visibilidade:
- *   super_admin  → vê tudo
- *   org owner/admin → vê tudo no workspace
- *   workspace admin → vê tudo no workspace
- *   agent          → vê apenas conversas atribuídas a si OU não atribuídas
- */
 function buildVisibilityClause(params, { isSuperAdmin, orgRole, workspaceRole, userId }) {
   const isAdmin = isSuperAdmin
     || ['owner', 'admin'].includes(orgRole)
     || workspaceRole === 'admin';
 
-  if (isAdmin) return '';  // sem restrição adicional
+  if (isAdmin) return '';
 
-  // Agente: vê as suas próprias + não atribuídas
   params.push(userId);
   return `AND (c.assignee_id = $${params.length} OR c.assignee_id IS NULL)`;
 }
 
 async function list(workspaceId, filters = {}, caller = {}) {
-  const { status, inboxId, assigneeId, departmentId, page = 1, limit = 30 } = filters;
+  const { status, inboxId, assigneeId, departmentId, contactId, labelId, page = 1, limit = 30 } = filters;
   const offset = (page - 1) * limit;
 
   const params = [workspaceId];
@@ -32,6 +24,11 @@ async function list(workspaceId, filters = {}, caller = {}) {
   if (inboxId)      { params.push(inboxId);      conds.push(`c.inbox_id = $${params.length}`); }
   if (assigneeId)   { params.push(assigneeId);   conds.push(`c.assignee_id = $${params.length}`); }
   if (departmentId) { params.push(departmentId); conds.push(`c.department_id = $${params.length}`); }
+  if (contactId)    { params.push(contactId);    conds.push(`c.contact_id = $${params.length}`); }
+  if (labelId)      {
+    params.push(labelId);
+    conds.push(`EXISTS (SELECT 1 FROM conversation_labels cl WHERE cl.conversation_id = c.id AND cl.label_id = $${params.length})`);
+  }
 
   const where      = 'WHERE ' + conds.join(' AND ');
   const visibility = buildVisibilityClause(params, caller);
@@ -52,7 +49,13 @@ async function list(workspaceId, filters = {}, caller = {}) {
             u.name         AS assignee_name,
             u.avatar_url   AS assignee_avatar,
             d.name         AS department_name,
-            d.color        AS department_color
+            d.color        AS department_color,
+            COALESCE(
+              (SELECT json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color))
+               FROM conversation_labels cl JOIN labels l ON l.id = cl.label_id
+               WHERE cl.conversation_id = c.id),
+              '[]'
+            ) AS labels
      FROM conversations c
      JOIN contacts ct ON ct.id = c.contact_id
      JOIN inboxes  i  ON i.id  = c.inbox_id
@@ -77,7 +80,13 @@ async function getById(conversationId, workspaceId, caller = {}) {
             i.name AS inbox_name, i.channel_type AS inbox_channel,
             i.evolution_api_url, i.evolution_api_key, i.evolution_instance,
             u.name AS assignee_name, u.avatar_url AS assignee_avatar,
-            d.name AS department_name, d.color AS department_color
+            d.name AS department_name, d.color AS department_color,
+            COALESCE(
+              (SELECT json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color))
+               FROM conversation_labels cl JOIN labels l ON l.id = cl.label_id
+               WHERE cl.conversation_id = c.id),
+              '[]'
+            ) AS labels
      FROM conversations c
      JOIN contacts ct ON ct.id = c.contact_id
      JOIN inboxes  i  ON i.id  = c.inbox_id
@@ -98,7 +107,6 @@ async function findOrCreate(workspaceId, { inboxId, contactId, remoteJid }) {
   );
   if (existing.rows.length) return { conversation: existing.rows[0], created: false };
 
-  // Auto-assign department from inbox if configured
   const inboxRes = await query(
     'SELECT department_id FROM inboxes WHERE id = $1',
     [inboxId]
@@ -107,21 +115,33 @@ async function findOrCreate(workspaceId, { inboxId, contactId, remoteJid }) {
   const r = await query(
     `INSERT INTO conversations (workspace_id, inbox_id, contact_id, remote_jid, department_id)
      VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [workspaceId, inboxId, contactId, remoteJid,
-      inboxRes.rows[0]?.department_id || null]
+    [workspaceId, inboxId, contactId, remoteJid, inboxRes.rows[0]?.department_id || null]
   );
   return { conversation: r.rows[0], created: true };
 }
 
-async function update(conversationId, workspaceId, { status, assigneeId, dealId, departmentId }) {
+async function update(conversationId, workspaceId, body) {
+  const map = {
+    status:       'status',
+    assigneeId:   'assignee_id',
+    dealId:       'deal_id',
+    departmentId: 'department_id',
+    csatRating:   'csat_rating',
+    csatComment:  'csat_comment',
+    slaBreached:  'sla_breached',
+    botActive:    'bot_active',
+  };
+
   const fields = [];
   const vals   = [];
   let   idx    = 1;
 
-  if (status       !== undefined) { fields.push(`status = $${idx++}`);        vals.push(status); }
-  if (assigneeId   !== undefined) { fields.push(`assignee_id = $${idx++}`);   vals.push(assigneeId || null); }
-  if (dealId       !== undefined) { fields.push(`deal_id = $${idx++}`);       vals.push(dealId || null); }
-  if (departmentId !== undefined) { fields.push(`department_id = $${idx++}`); vals.push(departmentId || null); }
+  for (const [jsKey, dbCol] of Object.entries(map)) {
+    if (body[jsKey] !== undefined) {
+      fields.push(`${dbCol} = $${idx++}`);
+      vals.push(body[jsKey] !== null ? body[jsKey] : null);
+    }
+  }
 
   if (!fields.length) throw Object.assign(new Error('Nenhum campo para atualizar'), { status: 400 });
 
@@ -143,7 +163,7 @@ async function refreshLastMessage(conversationId) {
          unread_count      = c.unread_count + 1
      FROM (
        SELECT content, created_at FROM messages
-       WHERE conversation_id = $1
+       WHERE conversation_id = $1 AND is_private = false
        ORDER BY created_at DESC LIMIT 1
      ) m
      WHERE c.id = $1`,

@@ -24,6 +24,10 @@ const webhooksRouter      = require('./modules/webhooks/webhooks.router');
 const metaRouter          = require('./modules/meta/meta.router');
 const kanbanRouter        = require('./modules/kanban/kanban.router');
 const departmentsRouter   = require('./modules/departments/departments.router');
+const cannedRouter        = require('./modules/canned-responses/canned-responses.router');
+const labelsRouter        = require('./modules/labels/labels.router');
+const reportsRouter       = require('./modules/reports/reports.router');
+const templatesRouter     = require('./modules/templates/templates.router');
 
 const app    = express();
 const server = http.createServer(app);
@@ -58,10 +62,14 @@ app.use('/api/v1/workspaces/:workspaceId/inboxes',         inboxesRouter);
 app.use('/api/v1/workspaces/:workspaceId/contacts',        contactsRouter);
 app.use('/api/v1/workspaces/:workspaceId/conversations',   conversationsRouter);
 app.use('/api/v1/workspaces/:workspaceId/kanban',          kanbanRouter);
+app.use('/api/v1/workspaces/:workspaceId/departments',     departmentsRouter);
+app.use('/api/v1/workspaces/:workspaceId/canned',          cannedRouter);
+app.use('/api/v1/workspaces/:workspaceId/labels',          labelsRouter);
+app.use('/api/v1/workspaces/:workspaceId/reports',         reportsRouter);
+app.use('/api/v1/workspaces/:workspaceId/templates',       templatesRouter);
 app.use('/api/v1/conversations/:conversationId/messages',  messagesRouter);
 app.use('/api/v1/webhooks',                                webhooksRouter);
 app.use('/api/v1/workspaces/:workspaceId/meta',            metaRouter);
-app.use('/api/v1/workspaces/:workspaceId/departments',    departmentsRouter);
 
 // ── Health ─────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date() }));

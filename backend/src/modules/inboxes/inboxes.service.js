@@ -44,10 +44,17 @@ async function create(workspaceId, body) {
 
 async function update(inboxId, workspaceId, body) {
   const map = {
-    name: 'name', phoneNumber: 'phone_number', isActive: 'is_active',
-    evolutionApiUrl: 'evolution_api_url', evolutionApiKey: 'evolution_api_key',
-    evolutionInstance: 'evolution_instance', connectionStatus: 'connection_status',
-    qrCode: 'qr_code',
+    name:              'name',
+    phoneNumber:       'phone_number',
+    isActive:          'is_active',
+    evolutionApiUrl:   'evolution_api_url',
+    evolutionApiKey:   'evolution_api_key',
+    evolutionInstance: 'evolution_instance',
+    connectionStatus:  'connection_status',
+    qrCode:            'qr_code',
+    autoAssign:        'auto_assign',
+    chatbotEnabled:    'chatbot_enabled',
+    chatbotPrompt:     'chatbot_prompt',
   };
 
   const fields = [];

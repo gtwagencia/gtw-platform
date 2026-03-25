@@ -22,7 +22,9 @@ ALTER TABLE deals
   ADD COLUMN IF NOT EXISTS ai_analyzed_at      TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS conversation_id     UUID REFERENCES conversations(id) ON DELETE SET NULL;
 
-CREATE INDEX IF NOT EXISTS idx_deals_conversation ON deals(conversation_id) WHERE conversation_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_deals_conversation
+  ON deals(conversation_id)
+  WHERE conversation_id IS NOT NULL;
 
 -- ── Log de follow-ups enviados ───────────────────────────────────
 CREATE TABLE IF NOT EXISTS follow_up_logs (
@@ -36,16 +38,17 @@ CREATE TABLE IF NOT EXISTS follow_up_logs (
   error_message   TEXT
 );
 
-CREATE INDEX idx_follow_up_logs_conv    ON follow_up_logs(conversation_id);
-CREATE INDEX idx_follow_up_logs_ws_sent ON follow_up_logs(workspace_id, sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_follow_up_logs_conv
+  ON follow_up_logs(conversation_id);
 
--- ── Etapas padrão do Kanban (seed via função) ────────────────────
--- As etapas são criadas quando o workspace é criado (ver workspaces.service.js)
--- Aqui apenas garantimos que a tabela kanban_stages tenha o campo correto
+CREATE INDEX IF NOT EXISTS idx_follow_up_logs_ws_sent
+  ON follow_up_logs(workspace_id, sent_at DESC);
+
+-- ── Etapas padrão do Kanban ──────────────────────────────────────
 ALTER TABLE kanban_stages
   ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT false;
 
--- ── Índice para conversas recentes sem resposta (para follow-up job) ──
+-- ── Índice para o job de follow-up ──────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_conversations_followup
   ON conversations(workspace_id, status, last_inbound_at)
   WHERE status = 'open' AND last_inbound_at IS NOT NULL;

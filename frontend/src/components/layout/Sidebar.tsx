@@ -8,7 +8,7 @@ import clsx from 'clsx';
 import {
   MessageSquare, Users, Kanban, Inbox, Settings,
   LogOut, ChevronDown, Building2, Home, User,
-  Check, Plus, ArrowLeftRight, LayoutList,
+  Check, Plus, ArrowLeftRight, LayoutList, BarChart2, BookMarked,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Workspace } from '@/types';
@@ -20,6 +20,8 @@ const navItems = [
   { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil' },
   { href: '/dashboard/inboxes',       icon: Inbox,         label: 'Inboxes' },
   { href: '/dashboard/departments',   icon: LayoutList,    label: 'Departamentos' },
+  { href: '/dashboard/canned',        icon: BookMarked,    label: 'Respostas Prontas' },
+  { href: '/dashboard/reports',       icon: BarChart2,     label: 'Relatórios' },
 ];
 
 const bottomItems = [
@@ -43,9 +45,7 @@ export default function Sidebar() {
 
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (dropRef.current && !dropRef.current.contains(e.target as Node)) {
-        setWsOpen(false);
-      }
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setWsOpen(false);
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -92,10 +92,7 @@ export default function Sidebar() {
               {currentOrg?.name}
             </div>
           </div>
-          <ChevronDown className={clsx(
-            'w-3.5 h-3.5 text-gray-500 transition-transform flex-shrink-0',
-            wsOpen && 'rotate-180'
-          )} />
+          <ChevronDown className={clsx('w-3.5 h-3.5 text-gray-500 transition-transform flex-shrink-0', wsOpen && 'rotate-180')} />
         </button>
 
         {wsOpen && (

@@ -51,7 +51,6 @@ async function create(orgId, { name, logoUrl, timezone }) {
   );
   const workspace = r.rows[0];
 
-  // Seed default Kanban stages
   await kanbanSvc.seedDefaultStages(workspace.id);
 
   return workspace;
@@ -67,16 +66,20 @@ async function getById(workspaceId) {
 // ── Update workspace ───────────────────────────────────────────────────────
 
 async function update(workspaceId, body) {
-  const allowed = ['name', 'logo_url', 'timezone', 'is_active',
-    'meta_pixel_id', 'meta_ad_account_id', 'meta_access_token', 'meta_conversions_token',
-    'business_hours', 'follow_up_enabled', 'ai_analysis_enabled', 'anthropic_api_key'];
-
   const map = {
-    name: 'name', logoUrl: 'logo_url', timezone: 'timezone', isActive: 'is_active',
-    metaPixelId: 'meta_pixel_id', metaAdAccountId: 'meta_ad_account_id',
-    metaAccessToken: 'meta_access_token', metaConversionsToken: 'meta_conversions_token',
-    businessHours: 'business_hours', followUpEnabled: 'follow_up_enabled',
-    aiAnalysisEnabled: 'ai_analysis_enabled', anthropicApiKey: 'anthropic_api_key',
+    name:                 'name',
+    logoUrl:              'logo_url',
+    timezone:             'timezone',
+    isActive:             'is_active',
+    metaPixelId:          'meta_pixel_id',
+    metaAdAccountId:      'meta_ad_account_id',
+    metaAccessToken:      'meta_access_token',
+    metaConversionsToken: 'meta_conversions_token',
+    businessHours:        'business_hours',
+    followUpEnabled:      'follow_up_enabled',
+    aiAnalysisEnabled:    'ai_analysis_enabled',
+    anthropicApiKey:      'anthropic_api_key',
+    slaResponseMinutes:   'sla_response_minutes',
   };
 
   const fields = [];
@@ -84,7 +87,7 @@ async function update(workspaceId, body) {
   let   idx    = 1;
 
   for (const [jsKey, dbCol] of Object.entries(map)) {
-    if (body[jsKey] !== undefined && allowed.includes(dbCol)) {
+    if (body[jsKey] !== undefined) {
       fields.push(`${dbCol} = $${idx++}`);
       vals.push(body[jsKey]);
     }

@@ -58,6 +58,7 @@ export interface Workspace {
   business_hours: BusinessHours | null;
   follow_up_enabled: boolean;
   ai_analysis_enabled: boolean;
+  sla_response_minutes: number | null;
   created_at: string;
   member_count?: number;
   inbox_count?: number;
@@ -74,6 +75,9 @@ export interface Inbox {
   connection_status: 'connected' | 'disconnected' | 'connecting';
   qr_code: string | null;
   is_active: boolean;
+  auto_assign: boolean;
+  chatbot_enabled: boolean;
+  chatbot_prompt: string | null;
   conversation_count?: number;
 }
 
@@ -95,6 +99,13 @@ export interface Contact {
   deal_count?: number;
 }
 
+export interface Label {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color: string;
+}
+
 export interface Conversation {
   id: string;
   workspace_id: string;
@@ -107,6 +118,10 @@ export interface Conversation {
   last_message_at: string | null;
   last_message_text: string | null;
   unread_count: number;
+  sla_breached: boolean;
+  bot_active: boolean;
+  csat_rating: number | null;
+  csat_comment: string | null;
   created_at: string;
   // Joined
   contact_name: string;
@@ -115,6 +130,10 @@ export interface Conversation {
   inbox_name: string;
   inbox_channel: string;
   assignee_name: string | null;
+  assignee_avatar: string | null;
+  department_name: string | null;
+  department_color: string | null;
+  labels: Label[];
 }
 
 export interface Message {
@@ -127,7 +146,18 @@ export interface Message {
   status: 'sent' | 'delivered' | 'read' | 'failed';
   sender_id: string | null;
   sender_name: string | null;
+  sender_avatar: string | null;
+  is_private: boolean;
   created_at: string;
+}
+
+export interface CannedResponse {
+  id: string;
+  workspace_id: string;
+  shortcut: string;
+  content: string;
+  created_by: string | null;
+  created_by_name: string | null;
 }
 
 export interface KanbanStage {
@@ -173,6 +203,23 @@ export interface Deal {
   response_time_seconds: number | null;
   last_inbound_at: string | null;
   unread_count: number | null;
+}
+
+export interface AgentReport {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  total_conversations: number;
+  resolved: number;
+  avg_response_time_seconds: number | null;
+  avg_csat: number | null;
+  messages_sent: number;
+}
+
+export interface VolumeByDay {
+  date: string;
+  total: number;
+  resolved: number;
 }
 
 export interface PaginatedResponse<T> {

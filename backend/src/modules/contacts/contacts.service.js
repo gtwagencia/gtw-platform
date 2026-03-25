@@ -104,4 +104,20 @@ async function remove(contactId, workspaceId) {
   if (!r.rows.length) throw Object.assign(new Error('Contato não encontrado'), { status: 404 });
 }
 
-module.exports = { list, getById, create, update, remove };
+async function listConversations(contactId, workspaceId) {
+  const r = await query(
+    `SELECT c.id, c.status, c.created_at, c.last_message_at, c.last_message_text,
+            c.unread_count, c.assignee_id, c.sla_breached,
+            i.name AS inbox_name,
+            u.name AS assignee_name
+     FROM conversations c
+     JOIN inboxes i ON i.id = c.inbox_id
+     LEFT JOIN users u ON u.id = c.assignee_id
+     WHERE c.contact_id = $1 AND c.workspace_id = $2
+     ORDER BY c.last_message_at DESC NULLS LAST`,
+    [contactId, workspaceId]
+  );
+  return r.rows;
+}
+
+module.exports = { list, getById, create, update, remove, listConversations };
