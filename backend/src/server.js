@@ -28,6 +28,7 @@ const cannedRouter        = require('./modules/canned-responses/canned-responses
 const labelsRouter        = require('./modules/labels/labels.router');
 const reportsRouter       = require('./modules/reports/reports.router');
 const templatesRouter     = require('./modules/templates/templates.router');
+const uploadsRouter       = require('./modules/uploads/uploads.router');
 
 const app    = express();
 const server = http.createServer(app);
@@ -39,6 +40,11 @@ const io     = new Server(server, {
 });
 
 app.set('io', io);
+
+// ── Static uploads ────────────────────────────────────────────────────────
+const path = require('path');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ── Security & parsing ─────────────────────────────────────────────────────
 app.use(helmet());
@@ -67,6 +73,7 @@ app.use('/api/v1/workspaces/:workspaceId/canned',          cannedRouter);
 app.use('/api/v1/workspaces/:workspaceId/labels',          labelsRouter);
 app.use('/api/v1/workspaces/:workspaceId/reports',         reportsRouter);
 app.use('/api/v1/workspaces/:workspaceId/templates',       templatesRouter);
+app.use('/api/v1/uploads',                                 uploadsRouter);
 app.use('/api/v1/conversations/:conversationId/messages',  messagesRouter);
 app.use('/api/v1/webhooks',                                webhooksRouter);
 app.use('/api/v1/workspaces/:workspaceId/meta',            metaRouter);

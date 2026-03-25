@@ -6,10 +6,102 @@ import { useAuth } from '@/store/auth';
 import Header from '@/components/layout/Header';
 import api from '@/lib/api';
 import type { Contact } from '@/types';
-import { Search, Plus, Mail, X, MessageSquare, Clock, CheckCircle, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, Mail, X, MessageSquare, ExternalLink, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import clsx from 'clsx';
+
+interface ContactFormData {
+  name: string;
+  phone: string;
+  email: string;
+  notes: string;
+  tags: string; // comma-separated
+}
+
+function ContactForm({ contact, workspaceId, onSave, onClose }: {
+  contact?: Contact;
+  workspaceId: string;
+  onSave: (c: Contact) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<ContactFormData>({
+    name:  contact?.name  || '',
+    phone: contact?.phone || '',
+    email: contact?.email || '',
+    notes: contact?.notes || '',
+    tags:  contact?.tags?.join(', ') || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState('');
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) { setError('Nome é obrigatório'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        name:  form.name.trim(),
+        phone: form.phone.trim() || undefined,
+        email: form.email.trim() || undefined,
+        notes: form.notes.trim() || undefined,
+        tags:  form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      };
+      const { data } = contact
+        ? await api.put(`/workspaces/${workspaceId}/contacts/${contact.id}`, payload)
+        : await api.post(`/workspaces/${workspaceId}/contacts`, payload);
+      onSave(data);
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Erro ao salvar');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-96" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-semibold text-gray-900">{contact ? 'Editar contato' : 'Novo contato'}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+        </div>
+
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nome *</label>
+            <input className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Nome completo" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Telefone</label>
+            <input className="input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="5511999999999" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">E-mail</label>
+            <input className="input" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="email@exemplo.com" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Tags <span className="text-gray-400">(separadas por vírgula)</span></label>
+            <input className="input" value={form.tags} onChange={e => setForm(p => ({ ...p, tags: e.target.value }))} placeholder="lead, premium, urgente" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+            <textarea className="input resize-none" rows={3} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Observações sobre o contato..." />
+          </div>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
+            <button type="submit" disabled={saving} className="btn-primary flex-1">
+              {saving ? 'Salvando...' : contact ? 'Salvar' : 'Criar contato'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 interface ConvSummary {
   id: string;
@@ -30,10 +122,11 @@ const STATUS_COLOR: Record<string, string> = {
   resolved: 'bg-gray-100 text-gray-600',
 };
 
-function ContactPanel({ contact, workspaceId, onClose }: {
+function ContactPanel({ contact, workspaceId, onClose, onEdit }: {
   contact: Contact;
   workspaceId: string;
   onClose: () => void;
+  onEdit: () => void;
 }) {
   const router = useRouter();
   const [convs,    setConvs]    = useState<ConvSummary[]>([]);
@@ -50,9 +143,14 @@ function ContactPanel({ contact, workspaceId, onClose }: {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
         <span className="font-semibold text-gray-900 text-sm">Perfil do contato</span>
-        <button onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button onClick={onEdit} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100" title="Editar">
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -162,6 +260,8 @@ export default function ContactsPage() {
   const [page,      setPage]      = useState(1);
   const [loading,   setLoading]   = useState(true);
   const [selected,  setSelected]  = useState<Contact | null>(null);
+  const [formOpen,  setFormOpen]  = useState(false);
+  const [editing,   setEditing]   = useState<Contact | undefined>(undefined);
 
   const load = useCallback(async () => {
     if (!currentWorkspace) return;
@@ -202,7 +302,10 @@ export default function ContactsPage() {
       <Header
         title={`Contatos (${total})`}
         actions={
-          <button className="btn-primary text-sm">
+          <button
+            className="btn-primary text-sm"
+            onClick={() => { setEditing(undefined); setFormOpen(true); }}
+          >
             <Plus className="w-4 h-4" />
             Novo contato
           </button>
@@ -234,6 +337,7 @@ export default function ContactsPage() {
                   <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">UTM</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 hidden xl:table-cell">Criado em</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Convs</th>
+                <th className="px-4 py-3 w-10"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -304,6 +408,15 @@ export default function ContactsPage() {
                           <span className="text-sm font-medium text-gray-700">{c.conversation_count ?? 0}</span>
                         </div>
                       </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditing(c); setFormOpen(true); }}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                          title="Editar contato"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -337,12 +450,33 @@ export default function ContactsPage() {
           )}
         </div>
 
+        {/* Create/Edit modal */}
+        {formOpen && (
+          <ContactForm
+            contact={editing}
+            workspaceId={currentWorkspace.id}
+            onClose={() => { setFormOpen(false); setEditing(undefined); }}
+            onSave={(saved) => {
+              setFormOpen(false);
+              setEditing(undefined);
+              if (editing) {
+                setContacts(prev => prev.map(c => c.id === saved.id ? { ...c, ...saved } : c));
+                if (selected?.id === saved.id) setSelected({ ...selected, ...saved });
+              } else {
+                setContacts(prev => [saved, ...prev]);
+                setTotal(t => t + 1);
+              }
+            }}
+          />
+        )}
+
         {/* Contact detail panel */}
         {selected && (
           <ContactPanel
             contact={selected}
             workspaceId={currentWorkspace.id}
             onClose={() => setSelected(null)}
+            onEdit={() => { setEditing(selected); setFormOpen(true); }}
           />
         )}
       </div>

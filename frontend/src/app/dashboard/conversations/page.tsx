@@ -10,11 +10,14 @@ import ChatWindow from '@/components/chat/ChatWindow';
 import api from '@/lib/api';
 import type { Conversation } from '@/types';
 import { MessageSquare } from 'lucide-react';
+import { useNotifications } from '@/hooks/useNotifications';
 
 function ConversationsInner() {
   const { currentWorkspace } = useAuth();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<Conversation | null>(null);
+
+  useNotifications(selected?.id);
 
   useEffect(() => {
     if (currentWorkspace) connectSocket(currentWorkspace.id);

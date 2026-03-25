@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, FormEvent } from 'react';
+import { useEffect, useRef, useState, FormEvent, useCallback } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import clsx from 'clsx';
@@ -10,7 +10,7 @@ import { joinConversation, getSocket } from '@/lib/socket';
 import type { Conversation, Message, Label, CannedResponse } from '@/types';
 import {
   Send, Check, CheckCheck, AlertCircle,
-  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText,
+  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip, Image,
 } from 'lucide-react';
 
 interface Props {
@@ -40,6 +40,8 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   const [labelOpen,     setLabelOpen]     = useState(false);
   const [showCsat,      setShowCsat]      = useState(false);
   const [csatRating,    setCsatRating]    = useState(0);
+  const [uploading,     setUploading]     = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [templates,     setTemplates]     = useState<{name: string; language: string; status: string; components: unknown[]}[]>([]);
   const [tplLoading,    setTplLoading]    = useState(false);
@@ -144,6 +146,33 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
       setSending(false);
     }
   }
+
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || sending || uploading) return;
+    e.target.value = '';
+
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const { data: upload } = await api.post('/uploads', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const { data } = await api.post(`/conversations/${conversation.id}/messages`, {
+        content:     file.name,
+        messageType: upload.type,
+        mediaUrl:    upload.url,
+        isPrivate:   mode === 'note',
+      });
+      setMessages((prev) => [...prev, data]);
+    } catch {
+      // silently fail — user can retry
+    } finally {
+      setUploading(false);
+    }
+  }, [conversation.id, mode, sending, uploading]);
 
   async function changeStatus(status: string) {
     const { data } = await api.put(
@@ -436,12 +465,31 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                       : 'bg-purple-600 text-white rounded-br-sm'
                     : 'bg-white text-gray-900 rounded-bl-sm border border-gray-100'
                 )}>
-                  {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
-                  {msg.media_url && (
-                    <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="text-xs underline opacity-75">
-                      Ver mídia
+                  {msg.message_type === 'image' && msg.media_url ? (
+                    <a href={msg.media_url} target="_blank" rel="noopener noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={msg.media_url}
+                        alt="imagem"
+                        className="rounded-lg max-w-full max-h-48 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                      />
+                      {msg.content && msg.content !== msg.media_url && (
+                        <p className="whitespace-pre-wrap break-words mt-1 text-xs opacity-80">{msg.content}</p>
+                      )}
                     </a>
-                  )}
+                  ) : msg.media_url ? (
+                    <a
+                      href={msg.media_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-xs underline opacity-80 hover:opacity-100"
+                    >
+                      <Paperclip className="w-3 h-3 flex-shrink-0" />
+                      {msg.content || 'Arquivo'}
+                    </a>
+                  ) : msg.content ? (
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  ) : null}
                   <div className={clsx('flex items-center justify-end gap-1 mt-1 text-xs', isOut ? 'text-white/60' : 'text-gray-400')}>
                     <span>{format(new Date(msg.created_at), 'HH:mm', { locale: ptBR })}</span>
                     {isOut && statusIcon(msg.status)}
@@ -581,6 +629,15 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
             </div>
           )}
 
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx"
+            onChange={handleFileUpload}
+          />
+
           <form onSubmit={sendMessage} className="flex gap-2">
             <textarea
               ref={textRef}
@@ -603,6 +660,19 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e as any); }
               }}
             />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isResolved || uploading}
+              className="px-3 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex items-center justify-center"
+              title="Enviar arquivo ou imagem"
+            >
+              {uploading
+                ? <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                : <Paperclip className="w-4 h-4" />
+              }
+            </button>
+
             <button
               type="submit"
               className={clsx(

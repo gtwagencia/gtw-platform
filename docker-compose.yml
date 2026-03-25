@@ -16,6 +16,8 @@ networks:
 volumes:
   gtw_pgdata:
     driver: local
+  gtw_uploads:
+    driver: local
 
 services:
 
@@ -51,6 +53,10 @@ services:
       DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@gtw-postgres:5432/gtw_platform
       JWT_SECRET:   ${JWT_SECRET}
       FRONTEND_URL: https://${DOMAIN}
+      BACKEND_URL:  https://${DOMAIN}
+      UPLOAD_DIR:   /app/uploads
+    volumes:
+      - gtw_uploads:/app/uploads
     networks:
       - network_public
       - gtw_internal
