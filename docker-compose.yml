@@ -76,6 +76,7 @@ services:
         - "traefik.http.routers.gtw-api.entrypoints=websecure"
         - "traefik.http.routers.gtw-api.tls.certresolver=letsencryptresolver"
         - "traefik.http.routers.gtw-api.priority=20"
+        - "traefik.http.routers.gtw-api.service=gtw-api"
         - "traefik.http.services.gtw-api.loadbalancer.server.port=4000"
 
         # Rota Socket.io (WebSocket) — sticky session obrigatória
@@ -83,6 +84,7 @@ services:
         - "traefik.http.routers.gtw-ws.entrypoints=websecure"
         - "traefik.http.routers.gtw-ws.tls.certresolver=letsencryptresolver"
         - "traefik.http.routers.gtw-ws.priority=15"
+        - "traefik.http.routers.gtw-ws.service=gtw-ws"
         - "traefik.http.services.gtw-ws.loadbalancer.server.port=4000"
         - "traefik.http.services.gtw-ws.loadbalancer.sticky.cookie=true"
         - "traefik.http.services.gtw-ws.loadbalancer.sticky.cookie.name=gtw_ws_sticky"
