@@ -26,8 +26,9 @@ export default function MembersPage() {
   const [loading,  setLoading]  = useState(true);
   const [adding,   setAdding]   = useState(false);
   const [form,     setForm]     = useState({ email: '', role: 'agent' });
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState('');
+  const [saving,    setSaving]    = useState(false);
+  const [error,     setError]     = useState('');
+  const [tempPass,  setTempPass]  = useState<{email: string; password: string} | null>(null);
 
   const isManager = currentOrg?.role === 'owner' || currentOrg?.role === 'admin';
 
@@ -52,12 +53,15 @@ export default function MembersPage() {
     setSaving(true);
     setError('');
     try {
-      await api.post(
+      const { data } = await api.post(
         `/orgs/${currentOrg.id}/workspaces/${currentWorkspace.id}/members`,
         form
       );
       setForm({ email: '', role: 'agent' });
       setAdding(false);
+      if (data.temp_password) {
+        setTempPass({ email: data.email, password: data.temp_password });
+      }
       load();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -145,6 +149,22 @@ export default function MembersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {tempPass && (
+          <div className="card p-5 mb-6 max-w-md border-green-200 bg-green-50">
+            <h3 className="font-semibold text-green-800 mb-2">Usuário criado com sucesso</h3>
+            <p className="text-sm text-green-700 mb-3">
+              Compartilhe as credenciais abaixo com o agente. A senha pode ser alterada no perfil.
+            </p>
+            <div className="space-y-1 text-sm font-mono bg-white rounded-lg p-3 border border-green-200">
+              <div><span className="text-gray-500">E-mail: </span>{tempPass.email}</div>
+              <div><span className="text-gray-500">Senha: </span><strong>{tempPass.password}</strong></div>
+            </div>
+            <button className="btn-secondary text-sm mt-3" onClick={() => setTempPass(null)}>
+              Entendido
+            </button>
           </div>
         )}
 

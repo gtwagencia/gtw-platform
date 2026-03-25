@@ -2,6 +2,10 @@
 
 const { query }   = require('../../config/database');
 const kanbanSvc   = require('../kanban/kanban.service');
+const bcrypt      = require('bcrypt');
+const crypto      = require('crypto');
+
+const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
 
 // ── List workspaces ────────────────────────────────────────────────────────
 
@@ -117,19 +121,37 @@ async function listMembers(workspaceId) {
   return r.rows;
 }
 
-async function addMember(workspaceId, { email, role }) {
-  const userRes = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
-  if (!userRes.rows.length) throw Object.assign(new Error('Usuário não encontrado'), { status: 404 });
+async function addMember(workspaceId, { email, role, name }) {
+  let userRes = await query('SELECT id, name FROM users WHERE email = $1', [email.toLowerCase()]);
+  let tempPassword = null;
+
+  if (!userRes.rows.length) {
+    // Cria o usuário com senha temporária aleatória
+    tempPassword = crypto.randomBytes(6).toString('hex'); // ex: "a3f8c21d4e90"
+    const hash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+    const userName = name || email.split('@')[0];
+    const created = await query(
+      `INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name`,
+      [userName, email.toLowerCase(), hash]
+    );
+    userRes = { rows: [created.rows[0]] };
+  }
 
   const userId = userRes.rows[0].id;
-  const r = await query(
+  await query(
     `INSERT INTO workspace_memberships (workspace_id, user_id, role)
      VALUES ($1, $2, $3)
-     ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role
-     RETURNING *`,
+     ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
     [workspaceId, userId, role || 'agent']
   );
-  return r.rows[0];
+
+  return {
+    user_id:       userId,
+    name:          userRes.rows[0].name,
+    email:         email.toLowerCase(),
+    role:          role || 'agent',
+    temp_password: tempPassword, // null se o usuário já existia
+  };
 }
 
 async function removeMember(workspaceId, userId) {
