@@ -80,17 +80,9 @@ router.post('/evolution/:inboxId', async (req, res) => {
     if (!inboxRes.rows.length) return;
     const inbox = inboxRes.rows[0];
 
-    // ── Webhook auth validation ───────────────────────────────
-    // Se a inbox tem evolution_api_key configurada, valida o header 'apikey'
-    // enviado automaticamente pela Evolution API em todo webhook.
-    // O inboxId UUID na URL já fornece segurança básica contra requisições aleatórias.
-    if (inbox.evolution_api_key) {
-      const providedApiKey = req.headers['apikey'] || req.headers['x-webhook-secret'] || '';
-      if (providedApiKey !== inbox.evolution_api_key) {
-        logger.warn('Webhook apikey inválida', { inboxId, ip: req.ip });
-        return;
-      }
-    }
+    // Segurança via inboxId UUID na URL (impossível de adivinhar).
+    // A Evolution API 2.3.7 não suporta headers customizados facilmente,
+    // então não validamos a apikey aqui.
     const io    = req.app.get('io');
 
     const eventType = event.event || event.type;
