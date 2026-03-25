@@ -1,0 +1,96 @@
+version: '3.9'
+
+# =============================================================
+# Traefik v2 — Reverse Proxy + SSL automático (Let's Encrypt)
+#
+# Deploy UMA VEZ antes de qualquer outro stack:
+#   docker stack deploy -c traefik/docker-compose.traefik.yml traefik
+#
+# Pré-requisito:
+#   docker network create --driver overlay --attachable network_public
+# =============================================================
+
+networks:
+  network_public:
+    external: true
+
+volumes:
+  traefik_certs:
+    driver: local
+
+services:
+  traefik:
+    image: traefik:v2.11
+    command:
+      # ── API / Dashboard ──────────────────────────────────────
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+
+      # ── Providers ────────────────────────────────────────────
+      - "--providers.docker=true"
+      - "--providers.docker.swarmMode=true"
+      - "--providers.docker.exposedByDefault=false"
+      - "--providers.docker.network=network_public"
+
+      # ── Entrypoints ──────────────────────────────────────────
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+
+      # Redireciona HTTP → HTTPS automaticamente
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+
+      # ── Let's Encrypt ─────────────────────────────────────────
+      - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencryptresolver.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencryptresolver.acme.storage=/letsencrypt/acme.json"
+
+      # ── Logs ─────────────────────────────────────────────────
+      - "--log.level=INFO"
+      - "--accesslog=true"
+
+    ports:
+      - target:    80
+        published: 80
+        protocol:  tcp
+        mode:      host
+      - target:    443
+        published: 443
+        protocol:  tcp
+        mode:      host
+
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "traefik_certs:/letsencrypt"
+
+    networks:
+      - network_public
+
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 5s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+
+        # Dashboard do Traefik (opcional — acesse traefik.app.gtw.digital)
+        - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN:-app.gtw.digital}`)"
+        - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+        - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.traefik-dashboard.service=api@internal"
+        - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth"
+
+        # Proteção básica do dashboard (user: admin / senha: defina TRAEFIK_PASSWORD)
+        # Gere com: echo $(htpasswd -nB admin) | sed -e s/\\$/\\$\\$/g
+        - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH:-admin:$$2y$$05$$placeholder}"
+
+      resources:
+        limits:
+          memory: 128M
