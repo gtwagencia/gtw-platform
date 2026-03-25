@@ -166,9 +166,10 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         mediaUrl:    upload.url,
         isPrivate:   mode === 'note',
       });
-      setMessages((prev) => [...prev, data]);
-    } catch {
-      // silently fail — user can retry
+      setMessages((prev) => prev.some(m => m.id === data.id) ? prev : [...prev, data]);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      alert(msg || 'Erro ao enviar arquivo. Verifique o tipo e tamanho (máx 20MB).');
     } finally {
       setUploading(false);
     }

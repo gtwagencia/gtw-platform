@@ -79,6 +79,13 @@ services:
         - "traefik.http.routers.gtw-api.service=gtw-api"
         - "traefik.http.services.gtw-api.loadbalancer.server.port=4000"
 
+        # Rota uploads de mídia
+        - "traefik.http.routers.gtw-uploads.rule=Host(`${DOMAIN}`) && PathPrefix(`/uploads`)"
+        - "traefik.http.routers.gtw-uploads.entrypoints=websecure"
+        - "traefik.http.routers.gtw-uploads.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.gtw-uploads.priority=10"
+        - "traefik.http.routers.gtw-uploads.service=gtw-api"
+
         # Rota Socket.io (WebSocket) — sticky session obrigatória
         - "traefik.http.routers.gtw-ws.rule=Host(`${DOMAIN}`) && PathPrefix(`/socket.io`)"
         - "traefik.http.routers.gtw-ws.entrypoints=websecure"
