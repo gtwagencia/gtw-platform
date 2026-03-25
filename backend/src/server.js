@@ -12,6 +12,7 @@ const rateLimit  = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 
 const { initDatabase } = require('./config/database');
+const { ensureBucket } = require('./services/storage.service');
 const logger           = require('./utils/logger');
 const { startJobs }    = require('./jobs/followUp.job');
 
@@ -171,6 +172,7 @@ const PORT = process.env.PORT || 4000;
 
 async function start() {
   await initDatabase();
+  await ensureBucket();
   server.listen(PORT, () => {
     logger.info(`GTW Platform API on port ${PORT}`);
     startJobs();

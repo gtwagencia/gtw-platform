@@ -2,11 +2,8 @@
 
 const axios  = require('axios');
 const path   = require('path');
-const fs     = require('fs');
 const { query } = require('../../config/database');
 const convSvc   = require('../conversations/conversations.service');
-
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
 
 const EXT_MIME = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
@@ -91,12 +88,13 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
 
         let evoRes;
         if (messageType && messageType !== 'text' && mediaUrl) {
-          // Extract filename from URL and read from disk
+          // Extract filename from URL and get file buffer from storage
           const filename = path.basename(new URL(mediaUrl).pathname);
-          const filePath = path.join(UPLOAD_DIR, filename);
           const ext      = path.extname(filename).toLowerCase();
           const mime     = EXT_MIME[ext] || 'application/octet-stream';
-          const base64   = (await fs.promises.readFile(filePath)).toString('base64');
+          const storageSvc = require('../../services/storage.service');
+          const fileBuffer = await storageSvc.getFileBuffer(filename);
+          const base64     = fileBuffer.toString('base64');
 
           evoRes = await axios.post(
             `${baseUrl}/message/sendMedia/${instance}`,

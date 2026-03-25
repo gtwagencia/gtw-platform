@@ -11,12 +11,14 @@ networks:
     external: true
   gtw_internal:
     driver: overlay
-    internal: true   # Postgres não fica exposto ao Traefik
+    internal: true   # Postgres e MinIO não ficam expostos diretamente
 
 volumes:
   gtw_pgdata:
     driver: local
   gtw_uploads:
+    driver: local
+  gtw_minio:
     driver: local
 
 services:
@@ -44,6 +46,43 @@ services:
         limits:
           memory: 512M
 
+  # ── MinIO Object Storage ────────────────────────────────────
+  gtw-minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    volumes:
+      - gtw_minio:/data
+    networks:
+      - network_public
+      - gtw_internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 10s
+      resources:
+        limits:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+
+        # Arquivos públicos — GET /files/{bucket}/{key}
+        - "traefik.http.routers.gtw-minio.rule=Host(`${DOMAIN}`) && PathPrefix(`/files`)"
+        - "traefik.http.routers.gtw-minio.entrypoints=websecure"
+        - "traefik.http.routers.gtw-minio.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.gtw-minio.priority=25"
+        - "traefik.http.routers.gtw-minio.middlewares=minio-strip"
+        - "traefik.http.routers.gtw-minio.service=gtw-minio"
+        - "traefik.http.services.gtw-minio.loadbalancer.server.port=9000"
+        - "traefik.http.middlewares.minio-strip.stripprefix.prefixes=/files"
+
   # ── Backend ────────────────────────────────────────────────
   gtw-backend:
     image: gtw-backend:latest
@@ -55,6 +94,12 @@ services:
       FRONTEND_URL: https://${DOMAIN}
       BACKEND_URL:  https://${DOMAIN}
       UPLOAD_DIR:   /app/uploads
+      # MinIO / S3 storage
+      STORAGE_ENDPOINT:   http://gtw-minio:9000
+      STORAGE_PUBLIC_URL: https://${DOMAIN}/files
+      STORAGE_ACCESS_KEY: ${MINIO_USER}
+      STORAGE_SECRET_KEY: ${MINIO_PASSWORD}
+      STORAGE_BUCKET:     gtw-media
     volumes:
       - gtw_uploads:/app/uploads
     networks:
@@ -62,6 +107,7 @@ services:
       - gtw_internal
     depends_on:
       - gtw-postgres
+      - gtw-minio
     deploy:
       replicas: 1
       restart_policy:
@@ -79,7 +125,7 @@ services:
         - "traefik.http.routers.gtw-api.service=gtw-api"
         - "traefik.http.services.gtw-api.loadbalancer.server.port=4000"
 
-        # Rota uploads de mídia
+        # Rota uploads legados (fallback para arquivos antigos em disco)
         - "traefik.http.routers.gtw-uploads.rule=Host(`${DOMAIN}`) && PathPrefix(`/uploads`)"
         - "traefik.http.routers.gtw-uploads.entrypoints=websecure"
         - "traefik.http.routers.gtw-uploads.tls.certresolver=letsencryptresolver"

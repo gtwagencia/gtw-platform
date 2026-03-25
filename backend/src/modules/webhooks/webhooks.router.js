@@ -6,9 +6,6 @@
  */
 
 const { Router }     = require('express');
-const path           = require('path');
-const fs             = require('fs');
-const { v4: uuidv4 } = require('uuid');
 const { query }      = require('../../config/database');
 const contactSvc     = require('../contacts/contacts.service');
 const convSvc        = require('../conversations/conversations.service');
@@ -19,8 +16,9 @@ const logger         = require('../../utils/logger');
 
 const router = Router();
 
-const UPLOAD_DIR  = process.env.UPLOAD_DIR  || path.join(process.cwd(), 'uploads');
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
+const path           = require('path');
+const { v4: uuidv4 } = require('uuid');
+const storageSvc     = require('../../services/storage.service');
 
 const MIME_EXT = {
   'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
@@ -36,20 +34,17 @@ function normalizePhone(jid) {
 }
 
 /**
- * Saves base64 media to disk and returns the local URL.
+ * Saves base64 media via storage service and returns the URL.
  * Falls back to the CDN URL if no base64 is available.
  */
 async function resolveMediaUrl(base64, mimeType, fallbackUrl) {
   if (!base64) return fallbackUrl || null;
 
   try {
-    // Strip data URI prefix if present
-    const raw = base64.replace(/^data:[^;]+;base64,/, '');
-    const ext  = MIME_EXT[mimeType] || '.bin';
+    const raw      = base64.replace(/^data:[^;]+;base64,/, '');
+    const ext      = MIME_EXT[mimeType] || '.bin';
     const filename = `${uuidv4()}${ext}`;
-    const filePath = path.join(UPLOAD_DIR, filename);
-    await fs.promises.writeFile(filePath, Buffer.from(raw, 'base64'));
-    return `${BACKEND_URL}/uploads/${filename}`;
+    return await storageSvc.uploadFile(Buffer.from(raw, 'base64'), filename, mimeType);
   } catch (err) {
     logger.warn('Failed to save inbound media', { err: err.message });
     return fallbackUrl || null;
