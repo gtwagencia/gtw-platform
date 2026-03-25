@@ -43,6 +43,9 @@ const io     = new Server(server, {
 
 app.set('io', io);
 
+// Confia no proxy Traefik para X-Forwarded-For (necessário para rate limiting)
+app.set('trust proxy', 1);
+
 // ── Static uploads ────────────────────────────────────────────────────────
 const path = require('path');
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
