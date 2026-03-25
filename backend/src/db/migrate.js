@@ -48,8 +48,19 @@ async function migrate() {
         console.log(`✓ ${file}`);
       } catch (err) {
         await client.query('ROLLBACK');
-        console.error(`✗ ${file}: ${err.message}`);
-        process.exit(1);
+        // Se os objetos já existem (42P07 = duplicate_table, 42701 = duplicate_column,
+        // 42710 = duplicate_object), registra como aplicada e continua.
+        const alreadyExists = ['42P07', '42701', '42710'].includes(err.code);
+        if (alreadyExists) {
+          console.warn(`  (schema já existe, marcando como aplicada) ${file}`);
+          await client.query(
+            'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
+            [file]
+          );
+        } else {
+          console.error(`✗ ${file}: ${err.message}`);
+          process.exit(1);
+        }
       }
     }
 
