@@ -124,12 +124,48 @@ router.post('/evolution/:inboxId', async (req, res) => {
         ? event.data.messages : [event.data];
 
       for (const msg of messages) {
-        if (msg.key?.fromMe) continue;
         const remoteJid = msg.key?.remoteJid;
         if (!remoteJid || remoteJid.includes('@g.us')) continue;
 
+        const isFromMe = !!msg.key?.fromMe;
         const phone    = normalizePhone(remoteJid);
         const pushName = msg.pushName || phone;
+
+        // ── Message sent FROM the connected phone ─────────────────────
+        if (isFromMe) {
+          const { content, messageType, mediaUrl } = extractMessageContent(msg);
+
+          // Find contact and conversation (only insert if we know this contact)
+          const contactRes = await query(
+            'SELECT * FROM contacts WHERE workspace_id = $1 AND phone = $2',
+            [inbox.workspace_id, phone]
+          );
+          const contact = contactRes.rows[0];
+          if (!contact) continue;
+
+          const { conversation } = await convSvc.findOrCreate(inbox.workspace_id, {
+            inboxId: inbox.id, contactId: contact.id, remoteJid,
+          });
+
+          // insertInbound with direction='outbound' — ON CONFLICT handles panel duplicates
+          const message = await msgSvc.insertInbound(conversation.id, {
+            content, messageType, mediaUrl,
+            evolutionMsgId: msg.key?.id,
+            direction: 'outbound',
+          });
+          if (!message) continue; // Already in DB (sent from panel, deduplicated by evolution_msg_id)
+
+          await convSvc.refreshLastMessage(conversation.id);
+          io?.to(`conv:${conversation.id}`).emit('message:new', message);
+          io?.to(`ws:${inbox.workspace_id}`).emit('conversation:updated', {
+            conversationId:  conversation.id,
+            lastMessageAt:   new Date(),
+            lastMessageText: content,
+          });
+          continue;
+        }
+
+        // ── Inbound message from contact ──────────────────────────────
 
         // Upsert contact
         let contact;
@@ -182,7 +218,6 @@ router.post('/evolution/:inboxId', async (req, res) => {
         // ── Chatbot response ──────────────────────────────────────────
         const isNewOrBotActive = created || conversation.bot_active;
         if (inbox.chatbot_enabled && !conversation.assignee_id && isNewOrBotActive) {
-          // Get workspace API key
           const wsRes = await query(
             'SELECT anthropic_api_key FROM workspaces WHERE id = $1',
             [inbox.workspace_id]
@@ -190,10 +225,8 @@ router.post('/evolution/:inboxId', async (req, res) => {
           const apiKey = wsRes.rows[0]?.anthropic_api_key;
 
           if (apiKey) {
-            // Mark bot as active
             await query('UPDATE conversations SET bot_active = true WHERE id = $1', [conversation.id]);
 
-            // Generate and send chatbot response (async, don't block)
             aiSvc.generateChatbotResponse(conversation.id, inbox.chatbot_prompt, apiKey)
               .then(async (botReply) => {
                 if (!botReply) return;

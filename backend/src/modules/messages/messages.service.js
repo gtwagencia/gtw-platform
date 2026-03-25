@@ -89,6 +89,7 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
         const instance = conv.evolution_instance;
         const headers  = { apikey: conv.evolution_api_key };
 
+        let evoRes;
         if (messageType && messageType !== 'text' && mediaUrl) {
           // Extract filename from URL and read from disk
           const filename = path.basename(new URL(mediaUrl).pathname);
@@ -97,7 +98,7 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
           const mime     = EXT_MIME[ext] || 'application/octet-stream';
           const base64   = (await fs.promises.readFile(filePath)).toString('base64');
 
-          await axios.post(
+          evoRes = await axios.post(
             `${baseUrl}/message/sendMedia/${instance}`,
             {
               number,
@@ -110,11 +111,18 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
             { headers, timeout: 30000 }
           );
         } else {
-          await axios.post(
+          evoRes = await axios.post(
             `${baseUrl}/message/sendText/${instance}`,
             { number, text: content },
             { headers, timeout: 10000 }
           );
+        }
+
+        // Store Evolution message ID to avoid duplication when webhook echoes back
+        const evoMsgId = evoRes?.data?.key?.id;
+        if (evoMsgId) {
+          await query('UPDATE messages SET evolution_msg_id = $1 WHERE id = $2', [evoMsgId, message.id]);
+          message.evolution_msg_id = evoMsgId;
         }
       } catch (err) {
         const errMsg = err?.response?.data || err?.message;
@@ -128,14 +136,14 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
   return message;
 }
 
-async function insertInbound(conversationId, { content, messageType, mediaUrl, mediaMimeType, evolutionMsgId }) {
+async function insertInbound(conversationId, { content, messageType, mediaUrl, mediaMimeType, evolutionMsgId, direction = 'inbound' }) {
   const r = await query(
     `INSERT INTO messages
        (conversation_id, direction, message_type, content, media_url, media_mime_type, evolution_msg_id, status)
-     VALUES ($1,'inbound',$2,$3,$4,$5,$6,'sent')
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'sent')
      ON CONFLICT (evolution_msg_id) DO NOTHING
      RETURNING *`,
-    [conversationId, messageType || 'text', content || null,
+    [conversationId, direction, messageType || 'text', content || null,
       mediaUrl || null, mediaMimeType || null, evolutionMsgId || null]
   );
   return r.rows[0] || null;
