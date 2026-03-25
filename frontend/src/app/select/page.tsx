@@ -13,7 +13,7 @@ type Step = 'org' | 'workspace';
 
 export default function SelectPage() {
   const router = useRouter();
-  const { user, currentOrg, setOrg, setWorkspace, accessToken } = useAuth();
+  const { user, currentOrg, setOrg, setWorkspace, accessToken, _hasHydrated } = useAuth();
   const { workspaces, loading, fetchForOrg } = useWorkspaceStore();
 
   const [step,          setStep]          = useState<Step>('org');
@@ -22,10 +22,11 @@ export default function SelectPage() {
   const [newWsName,     setNewWsName]     = useState('');
   const [saving,        setSaving]        = useState(false);
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated (wait for hydration first)
   useEffect(() => {
+    if (!_hasHydrated) return;
     if (!accessToken || !user) router.replace('/login');
-  }, [accessToken, user, router]);
+  }, [_hasHydrated, accessToken, user, router]);
 
   // If only one org and already has workspaces, auto-advance
   useEffect(() => {

@@ -19,6 +19,7 @@ const navItems = [
   { href: '/dashboard/contacts',      icon: Users,         label: 'Contatos' },
   { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil' },
   { href: '/dashboard/inboxes',       icon: Inbox,         label: 'Inboxes' },
+  { href: '/dashboard/members',       icon: Users,         label: 'Agentes' },
   { href: '/dashboard/departments',   icon: LayoutList,    label: 'Departamentos' },
   { href: '/dashboard/canned',        icon: BookMarked,    label: 'Respostas Prontas' },
   { href: '/dashboard/reports',       icon: BarChart2,     label: 'Relatórios' },
