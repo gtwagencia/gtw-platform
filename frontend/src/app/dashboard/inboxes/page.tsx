@@ -201,14 +201,11 @@ export default function InboxesPage() {
                     </button>
                   </div>
 
-                  <div className="mt-3 text-xs text-gray-400 space-y-1">
-                    <div>Webhook URL: <code className="text-brand-600 select-all">POST /api/v1/webhooks/evolution/{inbox.id}</code></div>
-                    {inbox.webhook_secret && (
-                      <div className="flex items-center gap-1">
-                        Webhook Secret (header <code>x-webhook-secret</code>):
-                        <code className="text-orange-600 select-all ml-1">{inbox.webhook_secret}</code>
-                      </div>
-                    )}
+                  <div className="mt-3 text-xs text-gray-400">
+                    <span>Webhook URL: </span>
+                    <code className="text-brand-600 select-all break-all">
+                      {typeof window !== 'undefined' ? `${window.location.origin}/api/v1/webhooks/evolution/${inbox.id}` : `/api/v1/webhooks/evolution/${inbox.id}`}
+                    </code>
                   </div>
                 </div>
 
