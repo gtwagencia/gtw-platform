@@ -10,16 +10,18 @@ RUN npm install --omit=dev
 FROM node:20-alpine AS production
 
 RUN addgroup -g 1001 -S nodejs && \
-    adduser  -S nodeuser -u 1001
+    adduser  -S nodeuser -u 1001 && \
+    apk add --no-cache su-exec
 
 WORKDIR /app
 
 COPY --from=deps --chown=nodeuser:nodejs /app/node_modules ./node_modules
 COPY --chown=nodeuser:nodejs . .
 
-RUN rm -f .env.* && chmod +x docker-entrypoint.sh
+RUN rm -f .env.* && chmod +x docker-entrypoint.sh && \
+    mkdir -p /app/uploads && chown nodeuser:nodejs /app/uploads
 
-USER nodeuser
+# Entrypoint roda como root para corrigir permissões do volume montado
 
 EXPOSE 4000
 
