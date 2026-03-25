@@ -68,12 +68,16 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
     // Send via Evolution API
     if (conv.evolution_api_url && conv.evolution_instance) {
       try {
+        // Evolution API v2.x usa "number" sem @s.whatsapp.net e campo "text" direto
+        const number = conv.remote_jid?.replace(/@.+$/, '') || conv.remote_jid;
         await axios.post(
           `${conv.evolution_api_url}/message/sendText/${conv.evolution_instance}`,
-          { number: conv.remote_jid, textMessage: { text: content } },
+          { number, text: content },
           { headers: { apikey: conv.evolution_api_key }, timeout: 10000 }
         );
-      } catch {
+      } catch (err) {
+        const errMsg = err?.response?.data || err?.message;
+        require('../../utils/logger').error('Evolution API send failed', { errMsg, conversationId });
         await query('UPDATE messages SET status = $1 WHERE id = $2', ['failed', message.id]);
         message.status = 'failed';
       }
