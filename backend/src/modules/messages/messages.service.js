@@ -1,8 +1,24 @@
 'use strict';
 
 const axios  = require('axios');
+const path   = require('path');
+const fs     = require('fs');
 const { query } = require('../../config/database');
 const convSvc   = require('../conversations/conversations.service');
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+
+const EXT_MIME = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.gif': 'image/gif',  '.webp': 'image/webp',
+  '.mp4': 'video/mp4',  '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4',
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
 
 async function list(conversationId, { page = 1, limit = 50 } = {}) {
   const offset = (page - 1) * limit;
@@ -68,13 +84,38 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
     // Send via Evolution API
     if (conv.evolution_api_url && conv.evolution_instance) {
       try {
-        // Evolution API v2.x usa "number" sem @s.whatsapp.net e campo "text" direto
         const number = conv.remote_jid?.replace(/@.+$/, '') || conv.remote_jid;
-        await axios.post(
-          `${conv.evolution_api_url}/message/sendText/${conv.evolution_instance}`,
-          { number, text: content },
-          { headers: { apikey: conv.evolution_api_key }, timeout: 10000 }
-        );
+        const baseUrl = `${conv.evolution_api_url}`;
+        const instance = conv.evolution_instance;
+        const headers  = { apikey: conv.evolution_api_key };
+
+        if (messageType && messageType !== 'text' && mediaUrl) {
+          // Extract filename from URL and read from disk
+          const filename = path.basename(new URL(mediaUrl).pathname);
+          const filePath = path.join(UPLOAD_DIR, filename);
+          const ext      = path.extname(filename).toLowerCase();
+          const mime     = EXT_MIME[ext] || 'application/octet-stream';
+          const base64   = (await fs.promises.readFile(filePath)).toString('base64');
+
+          await axios.post(
+            `${baseUrl}/message/sendMedia/${instance}`,
+            {
+              number,
+              mediatype: messageType,           // image | video | audio | document
+              media:     base64,
+              mimetype:  mime,
+              caption:   content || '',
+              fileName:  filename,
+            },
+            { headers, timeout: 30000 }
+          );
+        } else {
+          await axios.post(
+            `${baseUrl}/message/sendText/${instance}`,
+            { number, text: content },
+            { headers, timeout: 10000 }
+          );
+        }
       } catch (err) {
         const errMsg = err?.response?.data || err?.message;
         require('../../utils/logger').error('Evolution API send failed', { errMsg, conversationId });
