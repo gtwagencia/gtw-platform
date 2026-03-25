@@ -16,7 +16,7 @@ set -euo pipefail
 
 STACK_NAME="gtw"
 COMPOSE_FILE="docker-stack.yml"
-REGISTRY="${REGISTRY:-registry.seudominio.com}"
+REGISTRY="${REGISTRY:-registry.gtw.digital}"
 TAG="${TAG:-latest}"
 
 export REGISTRY TAG

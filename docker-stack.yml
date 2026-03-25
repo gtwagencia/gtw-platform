@@ -69,11 +69,11 @@ services:
 
   # ── Backend ─────────────────────────────────────────────
   backend:
-    image: ${REGISTRY:-registry.seudominio.com}/gtw-backend:${TAG:-latest}
+    image: ${REGISTRY:-registry.gtw.digital}/gtw-backend:${TAG:-latest}
     environment:
       NODE_ENV:     production
       PORT:         4000
-      FRONTEND_URL: ${FRONTEND_URL:-https://seudominio.com}
+      FRONTEND_URL: ${FRONTEND_URL:-https://app.gtw.digital}
       # A senha do banco é lida pelo arquivo de secret
       DATABASE_URL: postgresql://postgres_secret@postgres:5432/gtw_platform
     secrets:
@@ -113,9 +113,9 @@ services:
 
   # ── Frontend ────────────────────────────────────────────
   frontend:
-    image: ${REGISTRY:-registry.seudominio.com}/gtw-frontend:${TAG:-latest}
+    image: ${REGISTRY:-registry.gtw.digital}/gtw-frontend:${TAG:-latest}
     environment:
-      NEXT_PUBLIC_API_URL: ${FRONTEND_URL:-https://seudominio.com}/api/v1
+      NEXT_PUBLIC_API_URL: ${FRONTEND_URL:-https://app.gtw.digital}/api/v1
     networks:
       - gtw_net
     depends_on:
@@ -150,7 +150,7 @@ services:
 
   # ── Nginx (reverse proxy + SSL termination) ─────────────
   nginx:
-    image: ${REGISTRY:-registry.seudominio.com}/gtw-nginx:${TAG:-latest}
+    image: ${REGISTRY:-registry.gtw.digital}/gtw-nginx:${TAG:-latest}
     ports:
       - target:    80
         published: 80
