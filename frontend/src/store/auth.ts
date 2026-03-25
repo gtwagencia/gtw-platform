@@ -4,18 +4,20 @@ import type { User, OrgSummary, Workspace } from '@/types';
 import api from '@/lib/api';
 
 interface AuthState {
-  user:            User | null;
-  currentOrg:      OrgSummary | null;
+  user:             User | null;
+  currentOrg:       OrgSummary | null;
   currentWorkspace: Workspace | null;
-  accessToken:     string | null;
-  refreshToken:    string | null;
+  accessToken:      string | null;
+  refreshToken:     string | null;
+  _hasHydrated:     boolean;
 
-  login:           (email: string, password: string) => Promise<void>;
-  register:        (name: string, email: string, password: string, orgName?: string) => Promise<void>;
-  logout:          () => void;
-  setOrg:          (org: OrgSummary) => void;
-  setWorkspace:    (ws: Workspace) => void;
-  fetchMe:         () => Promise<void>;
+  login:            (email: string, password: string) => Promise<void>;
+  register:         (name: string, email: string, password: string, orgName?: string) => Promise<void>;
+  logout:           () => void;
+  setOrg:           (org: OrgSummary) => void;
+  setWorkspace:     (ws: Workspace) => void;
+  fetchMe:          () => Promise<void>;
+  setHasHydrated:   (v: boolean) => void;
 }
 
 export const useAuth = create<AuthState>()(
@@ -26,6 +28,8 @@ export const useAuth = create<AuthState>()(
       currentWorkspace: null,
       accessToken:      null,
       refreshToken:     null,
+      _hasHydrated:     false,
+      setHasHydrated:   (v) => set({ _hasHydrated: v }),
 
       login: async (email, password) => {
         const { data } = await api.post('/auth/login', { email, password });
@@ -76,6 +80,9 @@ export const useAuth = create<AuthState>()(
         accessToken: s.accessToken,
         refreshToken: s.refreshToken,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

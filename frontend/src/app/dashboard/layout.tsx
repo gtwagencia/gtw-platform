@@ -8,10 +8,11 @@ import Sidebar from '@/components/layout/Sidebar';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router      = useRouter();
-  const { user, accessToken, currentWorkspace } = useAuth();
+  const { user, accessToken, currentWorkspace, _hasHydrated } = useAuth();
   const initSocket  = useNotifications((s) => s.initSocket);
 
   useEffect(() => {
+    if (!_hasHydrated) return;
     if (!accessToken || !user) {
       router.replace('/login');
       return;
@@ -21,9 +22,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       return;
     }
     initSocket();
-  }, [accessToken, user, currentWorkspace, router, initSocket]);
+  }, [_hasHydrated, accessToken, user, currentWorkspace, router, initSocket]);
 
-  if (!accessToken || !user || !currentWorkspace) return null;
+  if (!_hasHydrated || !accessToken || !user || !currentWorkspace) return null;
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
