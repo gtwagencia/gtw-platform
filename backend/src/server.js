@@ -9,6 +9,8 @@ const helmet     = require('helmet');
 const cors       = require('cors');
 const rateLimit  = require('express-rate-limit');
 
+const jwt = require('jsonwebtoken');
+
 const { initDatabase } = require('./config/database');
 const logger           = require('./utils/logger');
 const { startJobs }    = require('./jobs/followUp.job');
@@ -55,10 +57,16 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 
 // ── Rate limiting ──────────────────────────────────────────────────────────
-app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
-app.use('/api/v1/auth/login',    authLimiter);
-app.use('/api/v1/auth/register', authLimiter);
+app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 500 }));
+const authLimiter    = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+const webhookLimiter = rateLimit({ windowMs:  1 * 60 * 1000, max: 120 }); // 2 req/s por IP
+const uploadLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, max: 60  }); // 4 uploads/min
+const csatLimiter    = rateLimit({ windowMs: 60 * 60 * 1000, max: 10  }); // 10 por hora
+app.use('/api/v1/auth/login',             authLimiter);
+app.use('/api/v1/auth/register',          authLimiter);
+app.use('/api/v1/webhooks',               webhookLimiter);
+app.use('/api/v1/uploads',                uploadLimiter);
+app.use(/\/conversations\/.*\/csat/,      csatLimiter);
 
 // ── Routes ─────────────────────────────────────────────────────────────────
 app.use('/api/v1/auth',                                    authRouter);
@@ -85,19 +93,74 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date() }));
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
 // ── Global error handler ───────────────────────────────────────────────────
+const SENSITIVE_KEYS = /token|secret|password|api_key|apikey|authorization/i;
+function sanitizeForLog(obj, depth = 0) {
+  if (depth > 4 || typeof obj !== 'object' || !obj) return obj;
+  return Object.fromEntries(
+    Object.entries(obj).map(([k, v]) =>
+      SENSITIVE_KEYS.test(k) ? [k, '[REDACTED]'] : [k, sanitizeForLog(v, depth + 1)]
+    )
+  );
+}
+
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
-  logger.error(err.message, { stack: err.stack });
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+  logger.error(err.message, sanitizeForLog({ stack: err.stack, context: err.context }));
+  const status = err.status || 500;
+  // Never expose internal error details in production
+  const message = status < 500
+    ? err.message
+    : (process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message);
+  res.status(status).json({ error: message });
 });
 
-// ── Socket.io ─────────────────────────────────────────────────────────────
-io.on('connection', (socket) => {
-  logger.info('Socket connected', { id: socket.id });
+// ── Socket.io — JWT obrigatório no handshake ───────────────────────────────
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) return next(new Error('AUTH_REQUIRED'));
+  try {
+    socket.data.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch {
+    next(new Error('AUTH_INVALID'));
+  }
+});
 
-  socket.on('join:workspace',    (id) => socket.join(`ws:${id}`));
-  socket.on('join:conversation', (id) => socket.join(`conv:${id}`));
-  socket.on('disconnect', () => logger.info('Socket disconnected', { id: socket.id }));
+io.on('connection', (socket) => {
+  const userId = socket.data.user?.sub;
+  logger.info('Socket connected', { id: socket.id, userId });
+
+  // Workspace join — validado contra workspaces do usuário
+  socket.on('join:workspace', async (workspaceId) => {
+    try {
+      const { query: dbQuery } = require('./config/database');
+      const r = await dbQuery(
+        `SELECT 1 FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2
+         UNION
+         SELECT 1 FROM users WHERE id = $2 AND is_super_admin = true`,
+        [workspaceId, userId]
+      );
+      if (r.rows.length) socket.join(`ws:${workspaceId}`);
+    } catch { /* silently ignore */ }
+  });
+
+  // Conversation join — validado contra ownership
+  socket.on('join:conversation', async (conversationId) => {
+    try {
+      const { query: dbQuery } = require('./config/database');
+      const r = await dbQuery(
+        `SELECT 1 FROM conversations c
+         JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id
+         WHERE c.id = $1 AND wm.user_id = $2
+         UNION
+         SELECT 1 FROM users WHERE id = $2 AND is_super_admin = true`,
+        [conversationId, userId]
+      );
+      if (r.rows.length) socket.join(`conv:${conversationId}`);
+    } catch { /* silently ignore */ }
+  });
+
+  socket.on('disconnect', () => logger.info('Socket disconnected', { id: socket.id, userId }));
 });
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────

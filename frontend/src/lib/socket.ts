@@ -11,11 +11,30 @@ export function getSocket(): Socket {
   return socket;
 }
 
-export function connectSocket(workspaceId: string) {
-  const s = getSocket();
-  if (!s.connected) s.connect();
-  s.emit('join:workspace', workspaceId);
-  return s;
+/**
+ * Conecta ao Socket.io enviando o JWT no handshake para autenticação.
+ * O servidor valida o token e só permite join em workspaces autorizados.
+ */
+export function connectSocket(workspaceId: string, accessToken?: string) {
+  // Se já tem socket mas o token mudou, reconecta
+  if (socket && accessToken) {
+    const currentToken = socket.auth && (socket.auth as Record<string, string>).token;
+    if (currentToken !== accessToken) {
+      socket.disconnect();
+      socket = null;
+    }
+  }
+
+  if (!socket) {
+    socket = io(SOCKET_URL, {
+      autoConnect: false,
+      auth: accessToken ? { token: accessToken } : undefined,
+    });
+  }
+
+  if (!socket.connected) socket.connect();
+  socket.emit('join:workspace', workspaceId);
+  return socket;
 }
 
 export function joinConversation(conversationId: string) {

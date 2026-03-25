@@ -120,7 +120,45 @@ async function findOrCreate(workspaceId, { inboxId, contactId, remoteJid }) {
   return { conversation: r.rows[0], created: true };
 }
 
+const VALID_STATUSES = new Set(['open', 'pending', 'resolved']);
+
 async function update(conversationId, workspaceId, body) {
+  // Validate enum fields
+  if (body.status !== undefined && !VALID_STATUSES.has(body.status)) {
+    throw Object.assign(new Error(`Status inválido: ${body.status}`), { status: 400 });
+  }
+
+  // Validate csat_rating range
+  if (body.csatRating !== undefined) {
+    const r = parseInt(body.csatRating, 10);
+    if (isNaN(r) || r < 1 || r > 5) {
+      throw Object.assign(new Error('csatRating deve ser entre 1 e 5'), { status: 400 });
+    }
+    body.csatRating = r;
+  }
+
+  // Validate assigneeId belongs to this workspace
+  if (body.assigneeId !== undefined && body.assigneeId !== null) {
+    const r = await query(
+      'SELECT 1 FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+      [workspaceId, body.assigneeId]
+    );
+    if (!r.rows.length) {
+      throw Object.assign(new Error('Agente não pertence a este workspace'), { status: 400 });
+    }
+  }
+
+  // Validate departmentId belongs to this workspace
+  if (body.departmentId !== undefined && body.departmentId !== null) {
+    const r = await query(
+      'SELECT 1 FROM departments WHERE id = $1 AND workspace_id = $2',
+      [body.departmentId, workspaceId]
+    );
+    if (!r.rows.length) {
+      throw Object.assign(new Error('Departamento não encontrado neste workspace'), { status: 400 });
+    }
+  }
+
   const map = {
     status:       'status',
     assigneeId:   'assignee_id',

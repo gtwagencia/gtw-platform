@@ -13,15 +13,15 @@ import { MessageSquare } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
 
 function ConversationsInner() {
-  const { currentWorkspace } = useAuth();
+  const { currentWorkspace, accessToken } = useAuth();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<Conversation | null>(null);
 
   useNotifications(selected?.id);
 
   useEffect(() => {
-    if (currentWorkspace) connectSocket(currentWorkspace.id);
-  }, [currentWorkspace]);
+    if (currentWorkspace) connectSocket(currentWorkspace.id, accessToken ?? undefined);
+  }, [currentWorkspace, accessToken]);
 
   // Auto-select conversation from ?id= (link from Kanban card)
   useEffect(() => {

@@ -58,13 +58,17 @@ router.put('/:conversationId', authenticate, workspaceContext, async (req, res, 
   } catch (err) { next(err); }
 });
 
-// CSAT endpoint — can be called without full auth (customer-facing link)
-router.post('/:conversationId/csat', async (req, res, next) => {
+// CSAT endpoint — requer autenticação e verifica ownership
+router.post('/:conversationId/csat', authenticate, workspaceContext, async (req, res, next) => {
   try {
     const { rating, comment } = req.body;
     if (!rating || rating < 1 || rating > 5) {
       return res.status(400).json({ error: 'Rating deve ser entre 1 e 5' });
     }
+    // Verifica que a conversa pertence ao workspace
+    const conv = await svc.getById(req.params.conversationId, req.params.workspaceId, getCaller(req));
+    if (!conv) return res.status(404).json({ error: 'Conversa não encontrada' });
+
     const updated = await svc.update(
       req.params.conversationId, req.params.workspaceId,
       { csatRating: parseInt(rating, 10), csatComment: comment || null }

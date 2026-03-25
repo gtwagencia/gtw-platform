@@ -33,8 +33,9 @@ async function create(workspaceId, body) {
   const r = await query(
     `INSERT INTO inboxes
        (workspace_id, name, channel_type, phone_number,
-        evolution_api_url, evolution_api_key, evolution_instance)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        evolution_api_url, evolution_api_key, evolution_instance,
+        webhook_secret)
+     VALUES ($1,$2,$3,$4,$5,$6,$7, encode(gen_random_bytes(32),'hex')) RETURNING *`,
     [workspaceId, name, channelType || 'whatsapp_evolution',
       phoneNumber || null, evolutionApiUrl || null,
       evolutionApiKey || null, evolutionInstance || null]

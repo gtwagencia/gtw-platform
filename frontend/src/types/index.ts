@@ -78,6 +78,7 @@ export interface Inbox {
   auto_assign: boolean;
   chatbot_enabled: boolean;
   chatbot_prompt: string | null;
+  webhook_secret: string | null;
   conversation_count?: number;
 }
 

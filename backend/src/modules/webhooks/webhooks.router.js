@@ -3,6 +3,10 @@
 /**
  * Evolution API webhook receiver.
  * Each inbox must point to: POST /api/v1/webhooks/evolution/:inboxId
+ *
+ * Segurança: configure na Evolution API o header:
+ *   x-webhook-secret: <valor do campo webhook_secret da inbox>
+ * (visível na página de configuração da inbox no painel admin)
  */
 
 const { Router }  = require('express');
@@ -75,6 +79,15 @@ router.post('/evolution/:inboxId', async (req, res) => {
     const inboxRes = await query('SELECT * FROM inboxes WHERE id = $1', [inboxId]);
     if (!inboxRes.rows.length) return;
     const inbox = inboxRes.rows[0];
+
+    // ── Webhook secret validation ─────────────────────────────
+    if (inbox.webhook_secret) {
+      const provided = req.headers['x-webhook-secret'] || req.headers['apikey'] || '';
+      if (provided !== inbox.webhook_secret) {
+        logger.warn('Webhook secret inválido', { inboxId, ip: req.ip });
+        return; // Ignora silenciosamente (não revela que o secret existe)
+      }
+    }
     const io    = req.app.get('io');
 
     const eventType = event.event || event.type;
