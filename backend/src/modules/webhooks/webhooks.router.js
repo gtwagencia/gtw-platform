@@ -6,6 +6,8 @@
  */
 
 const { Router }     = require('express');
+const axios          = require('axios');
+const { v4: uuidv4 } = require('uuid');
 const { query }      = require('../../config/database');
 const contactSvc     = require('../contacts/contacts.service');
 const convSvc        = require('../conversations/conversations.service');
@@ -13,12 +15,9 @@ const msgSvc         = require('../messages/messages.service');
 const kanbanSvc      = require('../kanban/kanban.service');
 const aiSvc          = require('../../services/ai.service');
 const logger         = require('../../utils/logger');
+const storageSvc     = require('../../services/storage.service');
 
 const router = Router();
-
-const path           = require('path');
-const { v4: uuidv4 } = require('uuid');
-const storageSvc     = require('../../services/storage.service');
 
 const MIME_EXT = {
   'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
@@ -34,26 +33,58 @@ function normalizePhone(jid) {
 }
 
 /**
- * Saves base64 media via storage service and returns the URL.
- * Falls back to the CDN URL if no base64 is available.
+ * Normaliza MIME type removendo parâmetros (ex: "audio/ogg; codecs=opus" → "audio/ogg").
  */
-async function resolveMediaUrl(base64, mimeType, fallbackUrl) {
-  if (!base64) return fallbackUrl || null;
-
-  try {
-    const raw      = base64.replace(/^data:[^;]+;base64,/, '');
-    const ext      = MIME_EXT[mimeType] || '.bin';
-    const filename = `${uuidv4()}${ext}`;
-    return await storageSvc.uploadFile(Buffer.from(raw, 'base64'), filename, mimeType);
-  } catch (err) {
-    logger.warn('Failed to save inbound media', { err: err.message });
-    return fallbackUrl || null;
-  }
+function cleanMime(mimeType) {
+  return (mimeType || '').split(';')[0].trim() || 'application/octet-stream';
 }
 
-async function extractMessageContent(msg) {
-  // Evolution API sends base64 at msg.base64 when WEBHOOK_BASE64=true
+/**
+ * Salva mídia no storage e retorna URL permanente.
+ * 1. Usa base64 do webhook (quando WEBHOOK_BASE64=true na Evolution API)
+ * 2. Se não vier base64, baixa diretamente da Evolution API
+ * 3. Fallback para URL do CDN do WhatsApp (temporária)
+ */
+async function resolveMediaUrl(base64, mimeType, fallbackUrl, inbox, msgKey) {
+  const mime     = cleanMime(mimeType);
+  const ext      = MIME_EXT[mime] || '.bin';
+  const filename = `${uuidv4()}${ext}`;
+
+  // 1. base64 veio no webhook
+  if (base64) {
+    try {
+      const raw = base64.replace(/^data:[^;]+;base64,/, '');
+      return await storageSvc.uploadFile(Buffer.from(raw, 'base64'), filename, mime);
+    } catch (err) {
+      logger.warn('Failed to save inbound media from base64', { err: err.message });
+    }
+  }
+
+  // 2. Baixar via Evolution API
+  if (inbox?.evolution_api_url && inbox?.evolution_instance && msgKey) {
+    try {
+      const resp = await axios.post(
+        `${inbox.evolution_api_url}/chat/getBase64FromMediaMessage/${inbox.evolution_instance}`,
+        { message: { key: msgKey } },
+        { headers: { apikey: inbox.evolution_api_key }, timeout: 20000 }
+      );
+      const dlBase64 = resp.data?.base64 || resp.data?.data?.base64;
+      if (dlBase64) {
+        const raw = dlBase64.replace(/^data:[^;]+;base64,/, '');
+        return await storageSvc.uploadFile(Buffer.from(raw, 'base64'), filename, mime);
+      }
+    } catch (err) {
+      logger.warn('Failed to download media from Evolution API', { err: err.message });
+    }
+  }
+
+  return fallbackUrl || null;
+}
+
+async function extractMessageContent(msg, inbox) {
+  // Evolution API envia base64 em msg.base64 quando WEBHOOK_BASE64=true
   const b64 = msg.base64 || null;
+  const key = msg.key || null;
 
   if (msg.message?.conversation)
     return { content: msg.message.conversation, messageType: 'text' };
@@ -64,46 +95,46 @@ async function extractMessageContent(msg) {
   if (msg.message?.imageMessage) {
     const m = msg.message.imageMessage;
     return {
-      content:     m.caption || '',
-      messageType: 'image',
-      mediaUrl:    await resolveMediaUrl(b64, m.mimetype || 'image/jpeg', m.url),
-      mediaMimeType: m.mimetype || 'image/jpeg',
+      content:      m.caption || '',
+      messageType:  'image',
+      mediaUrl:     await resolveMediaUrl(b64, m.mimetype || 'image/jpeg', m.url, inbox, key),
+      mediaMimeType: cleanMime(m.mimetype || 'image/jpeg'),
     };
   }
   if (msg.message?.videoMessage) {
     const m = msg.message.videoMessage;
     return {
-      content:     m.caption || '',
-      messageType: 'video',
-      mediaUrl:    await resolveMediaUrl(b64, m.mimetype || 'video/mp4', m.url),
-      mediaMimeType: m.mimetype || 'video/mp4',
+      content:      m.caption || '',
+      messageType:  'video',
+      mediaUrl:     await resolveMediaUrl(b64, m.mimetype || 'video/mp4', m.url, inbox, key),
+      mediaMimeType: cleanMime(m.mimetype || 'video/mp4'),
     };
   }
   if (msg.message?.audioMessage) {
     const m = msg.message.audioMessage;
     return {
-      content:     '',
-      messageType: 'audio',
-      mediaUrl:    await resolveMediaUrl(b64, m.mimetype || 'audio/ogg', m.url),
-      mediaMimeType: m.mimetype || 'audio/ogg',
+      content:      '',
+      messageType:  'audio',
+      mediaUrl:     await resolveMediaUrl(b64, m.mimetype || 'audio/ogg', m.url, inbox, key),
+      mediaMimeType: cleanMime(m.mimetype || 'audio/ogg'),
     };
   }
   if (msg.message?.documentMessage) {
     const m = msg.message.documentMessage;
     return {
-      content:     m.fileName || '',
-      messageType: 'document',
-      mediaUrl:    await resolveMediaUrl(b64, m.mimetype || 'application/octet-stream', m.url),
-      mediaMimeType: m.mimetype,
+      content:      m.fileName || '',
+      messageType:  'document',
+      mediaUrl:     await resolveMediaUrl(b64, m.mimetype || 'application/octet-stream', m.url, inbox, key),
+      mediaMimeType: cleanMime(m.mimetype || 'application/octet-stream'),
     };
   }
   if (msg.message?.stickerMessage) {
     const m = msg.message.stickerMessage;
     return {
-      content:     '',
-      messageType: 'sticker',
-      mediaUrl:    await resolveMediaUrl(b64, m.mimetype || 'image/webp', m.url),
-      mediaMimeType: m.mimetype || 'image/webp',
+      content:      '',
+      messageType:  'sticker',
+      mediaUrl:     await resolveMediaUrl(b64, m.mimetype || 'image/webp', m.url, inbox, key),
+      mediaMimeType: cleanMime(m.mimetype || 'image/webp'),
     };
   }
 
@@ -199,7 +230,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
 
         // ── Message sent FROM the connected phone ─────────────────────
         if (isFromMe) {
-          const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg);
+          const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg, inbox);
 
           // Find contact and conversation (only insert if we know this contact)
           const contactRes = await query(
@@ -250,7 +281,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
           inboxId: inbox.id, contactId: contact.id, remoteJid,
         });
 
-        const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg);
+        const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg, inbox);
         const message = await msgSvc.insertInbound(conversation.id, {
           content, messageType, mediaUrl, mediaMimeType, evolutionMsgId: msg.key?.id,
         });

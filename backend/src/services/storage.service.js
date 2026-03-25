@@ -59,38 +59,45 @@ async function ensureBucket() {
 // ── Upload file ────────────────────────────────────────────────────────────
 
 async function uploadFile(buffer, filename, mimeType) {
-  if (!isS3) {
-    const filePath = path.join(UPLOAD_DIR, filename);
-    await fs.promises.writeFile(filePath, buffer);
-    return `${BACKEND_URL}/uploads/${filename}`;
+  if (isS3) {
+    try {
+      await s3.send(new PutObjectCommand({
+        Bucket:      STORAGE_BUCKET,
+        Key:         filename,
+        Body:        buffer,
+        ContentType: mimeType || 'application/octet-stream',
+      }));
+      return `${STORAGE_PUBLIC_URL}/${STORAGE_BUCKET}/${filename}`;
+    } catch (err) {
+      logger.warn('S3 upload failed, falling back to disk', { err: err.message });
+      // fall through to disk
+    }
   }
 
-  await s3.send(new PutObjectCommand({
-    Bucket:      STORAGE_BUCKET,
-    Key:         filename,
-    Body:        buffer,
-    ContentType: mimeType || 'application/octet-stream',
-  }));
-
-  return `${STORAGE_PUBLIC_URL}/${STORAGE_BUCKET}/${filename}`;
+  const filePath = path.join(UPLOAD_DIR, filename);
+  await fs.promises.writeFile(filePath, buffer);
+  return `${BACKEND_URL}/uploads/${filename}`;
 }
 
 // ── Get file as Buffer ─────────────────────────────────────────────────────
 
 async function getFileBuffer(filename) {
-  if (!isS3) {
-    return fs.promises.readFile(path.join(UPLOAD_DIR, filename));
+  if (isS3) {
+    try {
+      const resp = await s3.send(new GetObjectCommand({
+        Bucket: STORAGE_BUCKET,
+        Key:    filename,
+      }));
+      const chunks = [];
+      for await (const chunk of resp.Body) chunks.push(chunk);
+      return Buffer.concat(chunks);
+    } catch (err) {
+      logger.warn('S3 get failed, trying disk', { err: err.message });
+      // fall through to disk
+    }
   }
 
-  const resp = await s3.send(new GetObjectCommand({
-    Bucket: STORAGE_BUCKET,
-    Key:    filename,
-  }));
-
-  // Stream → Buffer
-  const chunks = [];
-  for await (const chunk of resp.Body) chunks.push(chunk);
-  return Buffer.concat(chunks);
+  return fs.promises.readFile(path.join(UPLOAD_DIR, filename));
 }
 
 module.exports = { ensureBucket, uploadFile, getFileBuffer };
