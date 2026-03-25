@@ -168,7 +168,7 @@ export default function ReportsPage() {
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{summary.resolved}</div>
                   <div className="text-xs text-gray-400 mt-1">
-                    {summary.total_conversations > 0
+                    {parseInt(summary.total_conversations) > 0
                       ? Math.round((parseInt(summary.resolved) / parseInt(summary.total_conversations)) * 100)
                       : 0}% do total
                   </div>
