@@ -478,15 +478,39 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                         <p className="whitespace-pre-wrap break-words mt-1 text-xs opacity-80">{msg.content}</p>
                       )}
                     </a>
+                  ) : msg.message_type === 'sticker' && msg.media_url ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={msg.media_url} alt="sticker" className="w-28 h-28 object-contain" />
+                  ) : msg.message_type === 'audio' && msg.media_url ? (
+                    <audio
+                      controls
+                      src={msg.media_url}
+                      preload="metadata"
+                      className="max-w-[260px] h-10 accent-current"
+                      style={{ colorScheme: isOut ? 'dark' : 'light' }}
+                    />
+                  ) : msg.message_type === 'video' && msg.media_url ? (
+                    <div>
+                      <video
+                        controls
+                        src={msg.media_url}
+                        preload="metadata"
+                        className="rounded-lg max-w-full max-h-48"
+                      />
+                      {msg.content && (
+                        <p className="whitespace-pre-wrap break-words mt-1 text-xs opacity-80">{msg.content}</p>
+                      )}
+                    </div>
                   ) : msg.media_url ? (
                     <a
                       href={msg.media_url}
                       target="_blank"
                       rel="noopener noreferrer"
+                      download
                       className="flex items-center gap-2 text-xs underline opacity-80 hover:opacity-100"
                     >
-                      <Paperclip className="w-3 h-3 flex-shrink-0" />
-                      {msg.content || 'Arquivo'}
+                      <FileText className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate max-w-[180px]">{msg.content || 'Arquivo'}</span>
                     </a>
                   ) : msg.content ? (
                     <p className="whitespace-pre-wrap break-words">{msg.content}</p>
