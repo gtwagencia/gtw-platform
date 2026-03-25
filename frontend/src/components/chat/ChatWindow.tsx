@@ -69,7 +69,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     const socket = getSocket();
     const onNew = (msg: Message) => {
       if (msg.conversation_id === conversation.id) {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
       }
     };
     socket.on('message:new', onNew);
