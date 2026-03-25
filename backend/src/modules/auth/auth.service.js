@@ -56,15 +56,26 @@ async function getUserWithOrgs(userId) {
 // ── Register ───────────────────────────────────────────────────────────────
 
 async function register({ name, email, password, orgName }) {
+  // Registro público só é permitido enquanto não existe nenhum usuário (setup inicial).
+  // Após o primeiro cadastro, novos usuários são criados pelo painel admin.
+  const countRes = await query('SELECT COUNT(*) FROM users');
+  const userCount = parseInt(countRes.rows[0].count, 10);
+
+  if (userCount > 0) {
+    throw Object.assign(
+      new Error('Registro público desativado. Solicite acesso ao administrador.'),
+      { status: 403 }
+    );
+  }
+
   // Check duplicate email
   const existing = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
   if (existing.rows.length) throw Object.assign(new Error('E-mail já cadastrado'), { status: 409 });
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-  // First user ever becomes super admin
-  const countRes = await query('SELECT COUNT(*) FROM users');
-  const isSuperAdmin = parseInt(countRes.rows[0].count, 10) === 0;
+  // Primeiro usuário sempre vira super admin
+  const isSuperAdmin = true;
 
   // Create user
   const userRes = await query(
