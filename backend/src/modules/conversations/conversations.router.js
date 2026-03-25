@@ -80,6 +80,9 @@ router.post('/:conversationId/csat', authenticate, workspaceContext, async (req,
 router.post('/:conversationId/read', authenticate, workspaceContext, async (req, res, next) => {
   try {
     await svc.markRead(req.params.conversationId, req.params.workspaceId);
+    req.app.get('io')
+      ?.to(`ws:${req.params.workspaceId}`)
+      .emit('conversation:updated', { conversationId: req.params.conversationId, unread_count: 0 });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
