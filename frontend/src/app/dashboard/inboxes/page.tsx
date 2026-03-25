@@ -7,6 +7,12 @@ import api from '@/lib/api';
 import type { Inbox } from '@/types';
 import { Plus, Wifi, WifiOff, Loader, QrCode, Trash2, ChevronDown, ChevronRight, Bot, Users } from 'lucide-react';
 
+interface InboxEditForm {
+  autoAssign?: boolean;
+  chatbotEnabled?: boolean;
+  chatbotPrompt?: string;
+}
+
 export default function InboxesPage() {
   const { currentWorkspace } = useAuth();
   const [inboxes,    setInboxes]    = useState<Inbox[]>([]);
@@ -14,7 +20,7 @@ export default function InboxesPage() {
   const [qrInbox,    setQrInbox]    = useState<Inbox | null>(null);
   const [creating,   setCreating]   = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [editForm,   setEditForm]   = useState<Partial<Inbox>>({});
+  const [editForm,   setEditForm]   = useState<InboxEditForm>({});
   const [form,       setForm]       = useState({
     name: '', evolutionApiUrl: '', evolutionApiKey: '', evolutionInstance: '',
   });
