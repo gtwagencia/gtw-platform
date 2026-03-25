@@ -80,13 +80,16 @@ router.post('/evolution/:inboxId', async (req, res) => {
     if (!inboxRes.rows.length) return;
     const inbox = inboxRes.rows[0];
 
-    // ── Webhook secret validation ─────────────────────────────
-    if (inbox.webhook_secret) {
-      const provided = req.headers['x-webhook-secret'] || req.headers['apikey'] || '';
-      if (provided !== inbox.webhook_secret) {
-        logger.warn('Webhook secret inválido', { inboxId, ip: req.ip });
-        return; // Ignora silenciosamente (não revela que o secret existe)
-      }
+    // ── Webhook auth validation ───────────────────────────────
+    // Aceita: evolution_api_key via header 'apikey' (enviado automaticamente
+    // pela Evolution API em todo webhook) OU webhook_secret via 'x-webhook-secret'.
+    const providedApiKey = req.headers['apikey'] || '';
+    const providedSecret = req.headers['x-webhook-secret'] || '';
+    const validApiKey = inbox.evolution_api_key && providedApiKey === inbox.evolution_api_key;
+    const validSecret = inbox.webhook_secret && providedSecret === inbox.webhook_secret;
+    if (!validApiKey && !validSecret) {
+      logger.warn('Webhook auth inválida', { inboxId, ip: req.ip });
+      return;
     }
     const io    = req.app.get('io');
 
