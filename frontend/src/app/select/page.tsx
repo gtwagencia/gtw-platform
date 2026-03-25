@@ -14,7 +14,7 @@ type Step = 'org' | 'workspace';
 export default function SelectPage() {
   const router = useRouter();
   const { user, currentOrg, setOrg, setWorkspace, accessToken, _hasHydrated } = useAuth();
-  const { workspaces, loading, fetchForOrg } = useWorkspaceStore();
+  const { workspaces, loading, error: wsError, fetchForOrg } = useWorkspaceStore();
 
   const [step,          setStep]          = useState<Step>('org');
   const [selectedOrg,   setSelectedOrg]   = useState<OrgSummary | null>(currentOrg);
@@ -144,6 +144,13 @@ export default function SelectPage() {
               {loading ? (
                 <div className="flex items-center justify-center py-10">
                   <Loader className="w-6 h-6 animate-spin text-brand-500" />
+                </div>
+              ) : wsError ? (
+                <div className="text-center py-8">
+                  <p className="text-sm text-red-500 mb-2">{wsError}</p>
+                  <button className="btn-secondary text-sm" onClick={() => selectedOrg && fetchForOrg(selectedOrg.id)}>
+                    Tentar novamente
+                  </button>
                 </div>
               ) : workspaces.length === 0 ? (
                 <div className="text-center py-8">
