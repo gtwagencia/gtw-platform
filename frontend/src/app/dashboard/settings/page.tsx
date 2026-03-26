@@ -52,6 +52,8 @@ export default function SettingsPage() {
     followUpEnabled:      false,
     aiAnalysisEnabled:    false,
     anthropicApiKey:      '',
+    openaiApiKey:         '',
+    aiProvider:           'anthropic',
   });
 
   const [businessHours, setBusinessHours] = useState<BusinessHours>(DEFAULT_BUSINESS_HOURS);
@@ -71,6 +73,8 @@ export default function SettingsPage() {
         followUpEnabled:      currentWorkspace.follow_up_enabled ?? false,
         aiAnalysisEnabled:    currentWorkspace.ai_analysis_enabled ?? false,
         anthropicApiKey:      '',
+        openaiApiKey:         '',
+        aiProvider:           currentWorkspace.ai_provider || 'anthropic',
       });
       setBusinessHours(currentWorkspace.business_hours ?? DEFAULT_BUSINESS_HOURS);
     }
@@ -96,6 +100,7 @@ export default function SettingsPage() {
       if (!payload.metaAccessToken)      delete payload.metaAccessToken;
       if (!payload.metaConversionsToken) delete payload.metaConversionsToken;
       if (!payload.anthropicApiKey)      delete payload.anthropicApiKey;
+      if (!payload.openaiApiKey)         delete payload.openaiApiKey;
 
       const { data } = await api.put(
         `/orgs/${currentWorkspace.org_id}/workspaces/${currentWorkspace.id}`,
@@ -223,6 +228,29 @@ export default function SettingsPage() {
             </p>
 
             <div className="space-y-4">
+              {/* AI Provider selector */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Provedor de IA</label>
+                <div className="flex gap-3">
+                  {[
+                    { value: 'anthropic', label: 'Claude (Anthropic)' },
+                    { value: 'openai',    label: 'ChatGPT (OpenAI)' },
+                  ].map((opt) => (
+                    <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="aiProvider"
+                        value={opt.value}
+                        checked={form.aiProvider === opt.value}
+                        onChange={(e) => setForm({ ...form, aiProvider: e.target.value })}
+                        className="text-indigo-600"
+                      />
+                      <span className="text-sm text-gray-700">{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               {/* Anthropic API Key */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -235,8 +263,22 @@ export default function SettingsPage() {
                   onChange={(e) => setForm({ ...form, anthropicApiKey: e.target.value })}
                   placeholder="sk-ant-... (deixe em branco para manter o atual)"
                 />
+              </div>
+
+              {/* OpenAI API Key */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Chave API OpenAI (ChatGPT)
+                </label>
+                <input
+                  className="input font-mono text-xs"
+                  type={showTokens ? 'text' : 'password'}
+                  value={form.openaiApiKey}
+                  onChange={(e) => setForm({ ...form, openaiApiKey: e.target.value })}
+                  placeholder="sk-... (deixe em branco para manter o atual)"
+                />
                 <p className="text-xs text-gray-400 mt-1">
-                  Necessária para análise de conversas e geração de follow-ups.
+                  Configure o provedor ativo acima. Pode ter ambas as chaves salvas.
                 </p>
               </div>
 

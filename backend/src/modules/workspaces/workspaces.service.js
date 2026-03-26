@@ -83,6 +83,8 @@ async function update(workspaceId, body) {
     followUpEnabled:      'follow_up_enabled',
     aiAnalysisEnabled:    'ai_analysis_enabled',
     anthropicApiKey:      'anthropic_api_key',
+    openaiApiKey:         'openai_api_key',
+    aiProvider:           'ai_provider',
     slaResponseMinutes:   'sla_response_minutes',
   };
 

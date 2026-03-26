@@ -1,8 +1,41 @@
 'use strict';
 
 const Anthropic = require('@anthropic-ai/sdk');
+const axios     = require('axios');
 const { query } = require('../config/database');
 const logger    = require('../utils/logger');
+
+// ── Provider abstraction ────────────────────────────────────────────────────
+
+/**
+ * Chama o LLM configurado no workspace (Anthropic ou OpenAI).
+ * @param {object} opts
+ * @param {string} opts.provider  - 'anthropic' | 'openai'
+ * @param {string} opts.apiKey
+ * @param {string} opts.system
+ * @param {{ role: string, content: string }[]} opts.messages
+ * @param {number} [opts.maxTokens]
+ * @returns {Promise<string>}
+ */
+async function callLLM({ provider, apiKey, system, messages, maxTokens = 300 }) {
+  if (provider === 'openai') {
+    const msgs = [{ role: 'system', content: system }, ...messages];
+    const resp = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      { model: 'gpt-4o-mini', messages: msgs, max_tokens: maxTokens },
+      { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 30000 }
+    );
+    return resp.data.choices[0]?.message?.content?.trim() || '';
+  }
+
+  // Default: Anthropic
+  const client   = new Anthropic({ apiKey });
+  const model    = maxTokens > 200 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001';
+  const response = await client.messages.create({
+    model, max_tokens: maxTokens, system, messages,
+  });
+  return response.content[0]?.text?.trim() || '';
+}
 
 async function getConversationMessages(conversationId, includePrivate = false) {
   const r = await query(
@@ -27,13 +60,11 @@ function formatTranscript(messages) {
   }).join('\n');
 }
 
-async function analyzeConversation(conversationId, apiKey) {
+async function analyzeConversation(conversationId, apiKey, provider = 'anthropic') {
   const messages = await getConversationMessages(conversationId);
   if (!messages.length) return null;
 
-  const client = new Anthropic({ apiKey });
-  const transcript = formatTranscript(messages);
-
+  const transcript   = formatTranscript(messages);
   const systemPrompt = `Você é um assistente de CRM que analisa conversas de WhatsApp entre atendentes e clientes.
 Sua tarefa é classificar o lead em uma das seguintes etapas:
 - "Novo Lead": cliente acabou de entrar em contato, ainda não foi atendido ou apenas trocou cumprimentos
@@ -50,14 +81,10 @@ Responda SOMENTE com um JSON no formato:
 }`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system: systemPrompt,
+    const text = await callLLM({
+      provider, apiKey, system: systemPrompt, maxTokens: 300,
       messages: [{ role: 'user', content: `Analise esta conversa e classifique o lead:\n\n${transcript}` }],
     });
-
-    const text = response.content[0]?.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     return JSON.parse(jsonMatch[0]);
@@ -67,7 +94,7 @@ Responda SOMENTE com um JSON no formato:
   }
 }
 
-async function generateFollowUp(conversationId, triggerType, apiKey) {
+async function generateFollowUp(conversationId, triggerType, apiKey, provider = 'anthropic') {
   const messages = await getConversationMessages(conversationId);
 
   const convRes = await query(
@@ -80,12 +107,9 @@ async function generateFollowUp(conversationId, triggerType, apiKey) {
   const timeLabel   = timeLabels[triggerType] || triggerType;
   const transcript  = messages.length ? formatTranscript(messages.slice(-10)) : '(sem mensagens anteriores)';
 
-  const client = new Anthropic({ apiKey });
-
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 200,
+    return await callLLM({
+      provider, apiKey, maxTokens: 200,
       system: `Você é um assistente de vendas especializado em follow-up de leads no WhatsApp.
 Você deve criar mensagens de follow-up naturais, amigáveis e não invasivas em português brasileiro.
 A mensagem deve ser curta (2-4 frases), direta e despertar interesse sem ser insistente.
@@ -94,9 +118,7 @@ NÃO use emojis excessivos. Seja profissional mas caloroso.`,
         role: 'user',
         content: `Contexto da conversa anterior:\n${transcript}\n\nCrie uma mensagem de follow-up para ${contactName} que não respondeu há ${timeLabel}. O objetivo é retomar o contato de forma natural.`,
       }],
-    });
-
-    return response.content[0]?.text?.trim() || null;
+    }) || null;
   } catch (err) {
     logger.warn('Follow-up generation failed', { conversationId, err: err.message });
     return null;
@@ -106,11 +128,9 @@ NÃO use emojis excessivos. Seja profissional mas caloroso.`,
 /**
  * Generate a chatbot response for the last inbound message.
  */
-async function generateChatbotResponse(conversationId, systemPrompt, apiKey) {
+async function generateChatbotResponse(conversationId, systemPrompt, apiKey, provider = 'anthropic') {
   const messages = await getConversationMessages(conversationId);
   if (!messages.length) return null;
-
-  const client = new Anthropic({ apiKey });
 
   // Build alternating user/assistant message history
   const history = [];
@@ -128,14 +148,11 @@ async function generateChatbotResponse(conversationId, systemPrompt, apiKey) {
   if (!history.length || history[history.length - 1].role !== 'user') return null;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
+    return await callLLM({
+      provider, apiKey, maxTokens: 300,
       system: systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, clara e concisa em português brasileiro.',
       messages: history,
-    });
-
-    return response.content[0]?.text?.trim() || null;
+    }) || null;
   } catch (err) {
     logger.warn('Chatbot response failed', { conversationId, err: err.message });
     return null;
@@ -144,7 +161,8 @@ async function generateChatbotResponse(conversationId, systemPrompt, apiKey) {
 
 async function analyzeDeal(dealId, workspaceId) {
   const r = await query(
-    `SELECT d.id, d.conversation_id, w.anthropic_api_key, w.ai_analysis_enabled
+    `SELECT d.id, d.conversation_id,
+            w.anthropic_api_key, w.openai_api_key, w.ai_provider, w.ai_analysis_enabled
      FROM deals d
      JOIN workspaces w ON w.id = d.workspace_id
      WHERE d.id = $1 AND d.workspace_id = $2`,
@@ -152,10 +170,12 @@ async function analyzeDeal(dealId, workspaceId) {
   );
   if (!r.rows.length) return null;
 
-  const { conversation_id, anthropic_api_key, ai_analysis_enabled } = r.rows[0];
-  if (!ai_analysis_enabled || !anthropic_api_key || !conversation_id) return null;
+  const { conversation_id, anthropic_api_key, openai_api_key, ai_provider, ai_analysis_enabled } = r.rows[0];
+  const provider = ai_provider || 'anthropic';
+  const apiKey   = provider === 'openai' ? openai_api_key : anthropic_api_key;
+  if (!ai_analysis_enabled || !apiKey || !conversation_id) return null;
 
-  const result = await analyzeConversation(conversation_id, anthropic_api_key);
+  const result = await analyzeConversation(conversation_id, apiKey, provider);
   if (!result) return null;
 
   const stageNameMap = {

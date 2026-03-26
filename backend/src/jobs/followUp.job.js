@@ -43,9 +43,10 @@ async function runFollowUp(trigger) {
   const { minutes, max } = intervals[trigger];
 
   const wsRes = await query(
-    `SELECT id, anthropic_api_key, business_hours, follow_up_enabled
+    `SELECT id, anthropic_api_key, openai_api_key, ai_provider, business_hours, follow_up_enabled
      FROM workspaces
-     WHERE follow_up_enabled = true AND anthropic_api_key IS NOT NULL`
+     WHERE follow_up_enabled = true
+       AND (anthropic_api_key IS NOT NULL OR openai_api_key IS NOT NULL)`
   );
 
   for (const ws of wsRes.rows) {
@@ -82,7 +83,9 @@ async function runFollowUp(trigger) {
 
     for (const conv of convRes.rows) {
       try {
-        const messageText = await aiSvc.generateFollowUp(conv.id, trigger, ws.anthropic_api_key);
+        const provider    = ws.ai_provider || 'anthropic';
+        const apiKey      = provider === 'openai' ? ws.openai_api_key : ws.anthropic_api_key;
+        const messageText = await aiSvc.generateFollowUp(conv.id, trigger, apiKey, provider);
         if (!messageText) continue;
 
         await msgSvc.send(conv.id, conv.assignee_id || null, {

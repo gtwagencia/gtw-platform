@@ -99,15 +99,17 @@ async function listDeals(workspaceId, { stageId, assigneeId } = {}) {
             u.avatar_url  AS assignee_avatar,
             ks.name       AS stage_name,
             ks.color      AS stage_color,
-            conv.status   AS conv_status,
+            conv.status         AS conv_status,
+            conv.assignee_id    AS conv_assignee_id,
             conv.response_time_seconds,
             conv.last_inbound_at,
             conv.unread_count
      FROM deals d
      JOIN contacts c ON c.id = d.contact_id
      JOIN kanban_stages ks ON ks.id = d.stage_id
-     LEFT JOIN users u ON u.id = d.assignee_id
      LEFT JOIN conversations conv ON conv.id = d.conversation_id
+     -- usa atendente do deal; se nulo, usa atendente da conversa
+     LEFT JOIN users u ON u.id = COALESCE(d.assignee_id, conv.assignee_id)
      WHERE ${conds.join(' AND ')}
      ORDER BY d.created_at DESC`,
     params

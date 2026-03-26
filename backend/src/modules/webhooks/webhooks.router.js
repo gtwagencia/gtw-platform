@@ -316,15 +316,17 @@ router.post('/evolution/:inboxId', async (req, res) => {
         const isNewOrBotActive = created || conversation.bot_active;
         if (inbox.chatbot_enabled && !conversation.assignee_id && isNewOrBotActive) {
           const wsRes = await query(
-            'SELECT anthropic_api_key FROM workspaces WHERE id = $1',
+            'SELECT anthropic_api_key, openai_api_key, ai_provider FROM workspaces WHERE id = $1',
             [inbox.workspace_id]
           );
-          const apiKey = wsRes.rows[0]?.anthropic_api_key;
+          const ws       = wsRes.rows[0] || {};
+          const provider = ws.ai_provider || 'anthropic';
+          const apiKey   = provider === 'openai' ? ws.openai_api_key : ws.anthropic_api_key;
 
           if (apiKey) {
             await query('UPDATE conversations SET bot_active = true WHERE id = $1', [conversation.id]);
 
-            aiSvc.generateChatbotResponse(conversation.id, inbox.chatbot_prompt, apiKey)
+            aiSvc.generateChatbotResponse(conversation.id, inbox.chatbot_prompt, apiKey, provider)
               .then(async (botReply) => {
                 if (!botReply) return;
                 const botMsg = await msgSvc.send(conversation.id, null, {
