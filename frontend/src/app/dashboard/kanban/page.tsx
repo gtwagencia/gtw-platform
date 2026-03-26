@@ -59,7 +59,8 @@ function DealCard({ deal, dragHandleProps, isDragging, onAnalyze, analyzing, wor
   const router = useRouter();
 
   const hasUnread   = (deal.unread_count ?? 0) > 0;
-  const isWaiting   = deal.last_inbound_at && !deal.conv_status?.includes('resolved');
+  // "Aguardando" só aparece quando o cliente enviou e ainda não foi respondido
+  const isWaiting   = hasUnread && deal.last_inbound_at && !deal.conv_status?.includes('resolved');
   const waitingTime = deal.last_inbound_at
     ? formatDistanceToNow(new Date(deal.last_inbound_at), { locale: ptBR, addSuffix: false })
     : null;
