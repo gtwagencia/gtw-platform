@@ -54,6 +54,7 @@ export default function SettingsPage() {
     anthropicApiKey:      '',
     openaiApiKey:         '',
     aiProvider:           'anthropic',
+    aiModel:              '',
   });
 
   const [businessHours, setBusinessHours] = useState<BusinessHours>(DEFAULT_BUSINESS_HOURS);
@@ -75,6 +76,7 @@ export default function SettingsPage() {
         anthropicApiKey:      '',
         openaiApiKey:         '',
         aiProvider:           currentWorkspace.ai_provider || 'anthropic',
+        aiModel:              currentWorkspace.ai_model    || '',
       });
       setBusinessHours(currentWorkspace.business_hours ?? DEFAULT_BUSINESS_HOURS);
     }
@@ -249,6 +251,50 @@ export default function SettingsPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              {/* Model selector */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
+                <select
+                  className="input"
+                  value={form.aiModel}
+                  onChange={(e) => setForm({ ...form, aiModel: e.target.value })}
+                >
+                  <option value="">Padrão automático</option>
+                  {form.aiProvider === 'openai' ? (
+                    <>
+                      <optgroup label="GPT-4o">
+                        <option value="gpt-4o">gpt-4o (mais poderoso)</option>
+                        <option value="gpt-4o-mini">gpt-4o-mini (rápido e barato)</option>
+                      </optgroup>
+                      <optgroup label="GPT-4.1">
+                        <option value="gpt-4.1">gpt-4.1</option>
+                        <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                        <option value="gpt-4.1-nano">gpt-4.1-nano (mais barato)</option>
+                      </optgroup>
+                      <optgroup label="o-series (raciocínio)">
+                        <option value="o3-mini">o3-mini</option>
+                        <option value="o4-mini">o4-mini</option>
+                      </optgroup>
+                    </>
+                  ) : (
+                    <>
+                      <optgroup label="Claude Sonnet">
+                        <option value="claude-sonnet-4-6">claude-sonnet-4-6 (recomendado)</option>
+                      </optgroup>
+                      <optgroup label="Claude Haiku (rápido)">
+                        <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (rápido e barato)</option>
+                      </optgroup>
+                      <optgroup label="Claude Opus">
+                        <option value="claude-opus-4-6">claude-opus-4-6 (mais poderoso)</option>
+                      </optgroup>
+                    </>
+                  )}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  "Padrão automático" usa modelos balanceados por tipo de tarefa.
+                </p>
               </div>
 
               {/* Anthropic API Key */}

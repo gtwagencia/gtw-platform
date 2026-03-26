@@ -7,32 +7,40 @@ const logger    = require('../utils/logger');
 
 // ── Provider abstraction ────────────────────────────────────────────────────
 
+// Modelos padrão por provedor
+const DEFAULT_MODELS = {
+  anthropic: { fast: 'claude-haiku-4-5-20251001', smart: 'claude-sonnet-4-6' },
+  openai:    { fast: 'gpt-4o-mini',               smart: 'gpt-4o'            },
+};
+
 /**
  * Chama o LLM configurado no workspace (Anthropic ou OpenAI).
  * @param {object} opts
- * @param {string} opts.provider  - 'anthropic' | 'openai'
- * @param {string} opts.apiKey
- * @param {string} opts.system
+ * @param {string}  opts.provider  - 'anthropic' | 'openai'
+ * @param {string}  opts.apiKey
+ * @param {string}  [opts.model]   - modelo específico; usa padrão se omitido
+ * @param {string}  opts.system
  * @param {{ role: string, content: string }[]} opts.messages
- * @param {number} [opts.maxTokens]
+ * @param {number}  [opts.maxTokens]
  * @returns {Promise<string>}
  */
-async function callLLM({ provider, apiKey, system, messages, maxTokens = 300 }) {
+async function callLLM({ provider, apiKey, model, system, messages, maxTokens = 300 }) {
   if (provider === 'openai') {
+    const resolvedModel = model || (maxTokens > 200 ? DEFAULT_MODELS.openai.smart : DEFAULT_MODELS.openai.fast);
     const msgs = [{ role: 'system', content: system }, ...messages];
     const resp = await axios.post(
       'https://api.openai.com/v1/chat/completions',
-      { model: 'gpt-4o-mini', messages: msgs, max_tokens: maxTokens },
+      { model: resolvedModel, messages: msgs, max_tokens: maxTokens },
       { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 30000 }
     );
     return resp.data.choices[0]?.message?.content?.trim() || '';
   }
 
   // Default: Anthropic
-  const client   = new Anthropic({ apiKey });
-  const model    = maxTokens > 200 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001';
-  const response = await client.messages.create({
-    model, max_tokens: maxTokens, system, messages,
+  const resolvedModel = model || (maxTokens > 200 ? DEFAULT_MODELS.anthropic.smart : DEFAULT_MODELS.anthropic.fast);
+  const client        = new Anthropic({ apiKey });
+  const response      = await client.messages.create({
+    model: resolvedModel, max_tokens: maxTokens, system, messages,
   });
   return response.content[0]?.text?.trim() || '';
 }
@@ -60,7 +68,7 @@ function formatTranscript(messages) {
   }).join('\n');
 }
 
-async function analyzeConversation(conversationId, apiKey, provider = 'anthropic') {
+async function analyzeConversation(conversationId, apiKey, provider = 'anthropic', model = null) {
   const messages = await getConversationMessages(conversationId);
   if (!messages.length) return null;
 
@@ -82,7 +90,7 @@ Responda SOMENTE com um JSON no formato:
 
   try {
     const text = await callLLM({
-      provider, apiKey, system: systemPrompt, maxTokens: 300,
+      provider, apiKey, model, system: systemPrompt, maxTokens: 300,
       messages: [{ role: 'user', content: `Analise esta conversa e classifique o lead:\n\n${transcript}` }],
     });
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -94,7 +102,7 @@ Responda SOMENTE com um JSON no formato:
   }
 }
 
-async function generateFollowUp(conversationId, triggerType, apiKey, provider = 'anthropic') {
+async function generateFollowUp(conversationId, triggerType, apiKey, provider = 'anthropic', model = null) {
   const messages = await getConversationMessages(conversationId);
 
   const convRes = await query(
@@ -109,7 +117,7 @@ async function generateFollowUp(conversationId, triggerType, apiKey, provider = 
 
   try {
     return await callLLM({
-      provider, apiKey, maxTokens: 200,
+      provider, apiKey, model, maxTokens: 200,
       system: `Você é um assistente de vendas especializado em follow-up de leads no WhatsApp.
 Você deve criar mensagens de follow-up naturais, amigáveis e não invasivas em português brasileiro.
 A mensagem deve ser curta (2-4 frases), direta e despertar interesse sem ser insistente.
@@ -128,7 +136,7 @@ NÃO use emojis excessivos. Seja profissional mas caloroso.`,
 /**
  * Generate a chatbot response for the last inbound message.
  */
-async function generateChatbotResponse(conversationId, systemPrompt, apiKey, provider = 'anthropic') {
+async function generateChatbotResponse(conversationId, systemPrompt, apiKey, provider = 'anthropic', model = null) {
   const messages = await getConversationMessages(conversationId);
   if (!messages.length) return null;
 
@@ -149,7 +157,7 @@ async function generateChatbotResponse(conversationId, systemPrompt, apiKey, pro
 
   try {
     return await callLLM({
-      provider, apiKey, maxTokens: 300,
+      provider, apiKey, model, maxTokens: 300,
       system: systemPrompt || 'Você é um assistente de atendimento ao cliente. Responda de forma educada, clara e concisa em português brasileiro.',
       messages: history,
     }) || null;
@@ -162,7 +170,7 @@ async function generateChatbotResponse(conversationId, systemPrompt, apiKey, pro
 async function analyzeDeal(dealId, workspaceId) {
   const r = await query(
     `SELECT d.id, d.conversation_id,
-            w.anthropic_api_key, w.openai_api_key, w.ai_provider, w.ai_analysis_enabled
+            w.anthropic_api_key, w.openai_api_key, w.ai_provider, w.ai_model, w.ai_analysis_enabled
      FROM deals d
      JOIN workspaces w ON w.id = d.workspace_id
      WHERE d.id = $1 AND d.workspace_id = $2`,
@@ -170,12 +178,12 @@ async function analyzeDeal(dealId, workspaceId) {
   );
   if (!r.rows.length) return null;
 
-  const { conversation_id, anthropic_api_key, openai_api_key, ai_provider, ai_analysis_enabled } = r.rows[0];
+  const { conversation_id, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled } = r.rows[0];
   const provider = ai_provider || 'anthropic';
   const apiKey   = provider === 'openai' ? openai_api_key : anthropic_api_key;
   if (!ai_analysis_enabled || !apiKey || !conversation_id) return null;
 
-  const result = await analyzeConversation(conversation_id, apiKey, provider);
+  const result = await analyzeConversation(conversation_id, apiKey, provider, ai_model || null);
   if (!result) return null;
 
   const stageNameMap = {
