@@ -130,11 +130,32 @@ io.use((socket, next) => {
   }
 });
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   const userId = socket.data.user?.sub;
   logger.info('Socket connected', { id: socket.id, userId });
 
-  // Workspace join — validado contra workspaces do usuário
+  // Auto-join: entra em todos os workspaces do usuário imediatamente na conexão.
+  // Evita race condition onde mensagens chegam antes do join:workspace ser processado.
+  try {
+    const { query: dbQuery } = require('./config/database');
+    const isSuperAdmin = socket.data.user?.isSuperAdmin;
+    let wsRows;
+    if (isSuperAdmin) {
+      const r = await dbQuery('SELECT id AS workspace_id FROM workspaces');
+      wsRows = r.rows;
+    } else {
+      const r = await dbQuery(
+        'SELECT workspace_id FROM workspace_memberships WHERE user_id = $1',
+        [userId]
+      );
+      wsRows = r.rows;
+    }
+    for (const row of wsRows) {
+      socket.join(`ws:${row.workspace_id}`);
+    }
+  } catch { /* silently ignore */ }
+
+  // join:workspace mantido para compatibilidade (já entrou acima, mas não custa)
   socket.on('join:workspace', async (workspaceId) => {
     try {
       const { query: dbQuery } = require('./config/database');
