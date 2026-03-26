@@ -151,6 +151,7 @@ export interface Message {
   sender_name: string | null;
   sender_avatar: string | null;
   is_private: boolean;
+  evolution_msg_id: string | null;
   created_at: string;
 }
 

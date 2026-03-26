@@ -206,10 +206,18 @@ async function refreshLastMessage(conversationId, direction = 'inbound') {
   await query(
     `UPDATE conversations c
      SET last_message_at   = m.created_at,
-         last_message_text = m.content,
+         last_message_text = CASE
+           WHEN m.content IS NOT NULL AND m.content != '' THEN m.content
+           WHEN m.message_type = 'audio'    THEN '🎵 Áudio'
+           WHEN m.message_type = 'image'    THEN '📷 Imagem'
+           WHEN m.message_type = 'video'    THEN '📹 Vídeo'
+           WHEN m.message_type = 'document' THEN '📄 Documento'
+           WHEN m.message_type = 'sticker'  THEN '🎨 Figurinha'
+           ELSE '[mídia]'
+         END,
          unread_count      = ${unreadExpr}
      FROM (
-       SELECT content, created_at FROM messages
+       SELECT content, created_at, message_type FROM messages
        WHERE conversation_id = $1 AND is_private = false
        ORDER BY created_at DESC LIMIT 1
      ) m

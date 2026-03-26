@@ -72,8 +72,17 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         setMessages((prev) => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
       }
     };
-    socket.on('message:new', onNew);
-    return () => { socket.off('message:new', onNew); };
+    const onStatus = ({ evolutionMsgId, status }: { evolutionMsgId: string; status: string }) => {
+      setMessages((prev) => prev.map((m) =>
+        m.evolution_msg_id === evolutionMsgId ? { ...m, status } : m
+      ));
+    };
+    socket.on('message:new',    onNew);
+    socket.on('message:status', onStatus);
+    return () => {
+      socket.off('message:new',    onNew);
+      socket.off('message:status', onStatus);
+    };
   }, [conversation.id]);
 
   // Load agents, labels, canned
@@ -238,10 +247,10 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   }
 
   const statusIcon = (s: string) => {
-    if (s === 'sent')      return <Check       className="w-3 h-3" />;
-    if (s === 'delivered') return <CheckCheck  className="w-3 h-3" />;
-    if (s === 'read')      return <CheckCheck  className="w-3 h-3 text-blue-300" />;
-    if (s === 'failed')    return <AlertCircle className="w-3 h-3 text-red-300" />;
+    if (s === 'sent')      return <Check       className="w-3.5 h-3.5 opacity-70" title="Enviado" />;
+    if (s === 'delivered') return <CheckCheck  className="w-3.5 h-3.5 opacity-90" title="Entregue" />;
+    if (s === 'read')      return <CheckCheck  className="w-3.5 h-3.5 text-blue-300" title="Lido" />;
+    if (s === 'failed')    return <AlertCircle className="w-3.5 h-3.5 text-red-300" title="Falhou" />;
     return null;
   };
 
