@@ -148,7 +148,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     setSending(true);
     try {
       const { data } = await api.post(`/conversations/${conversation.id}/messages`, { content, isPrivate });
-      setMessages((prev) => [...prev, data]);
+      setMessages((prev) => prev.some(m => m.id === data.id) ? prev : [...prev, data]);
     } catch {
       setText(content);
     } finally {

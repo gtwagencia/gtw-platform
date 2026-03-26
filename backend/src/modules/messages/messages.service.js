@@ -140,6 +140,30 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
 }
 
 async function insertInbound(conversationId, { content, messageType, mediaUrl, mediaMimeType, evolutionMsgId, direction = 'inbound' }) {
+  // Para mensagens outbound (isFromMe=true), tenta vincular o evolution_msg_id a uma
+  // mensagem já enviada pelo painel (que tem evolution_msg_id = NULL).
+  // Isso evita duplicatas quando o webhook chega antes da resposta da Evolution API.
+  if (direction === 'outbound' && evolutionMsgId) {
+    const upd = await query(
+      `UPDATE messages
+       SET evolution_msg_id = $1
+       WHERE id = (
+         SELECT id FROM messages
+         WHERE conversation_id = $2
+           AND direction = 'outbound'
+           AND evolution_msg_id IS NULL
+           AND message_type = $3
+           AND (content = $4 OR (content IS NULL AND $4 IS NULL))
+           AND created_at > NOW() - INTERVAL '3 minutes'
+         ORDER BY created_at DESC
+         LIMIT 1
+       )
+       RETURNING *`,
+      [evolutionMsgId, conversationId, messageType || 'text', content || null]
+    );
+    if (upd.rows.length) return null; // Vinculado à mensagem do painel, não emite duplicata
+  }
+
   const r = await query(
     `INSERT INTO messages
        (conversation_id, direction, message_type, content, media_url, media_mime_type, evolution_msg_id, status)

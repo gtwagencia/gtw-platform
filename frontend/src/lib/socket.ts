@@ -12,11 +12,22 @@ function rejoinRooms() {
   if (_conversationId) socket.emit('join:conversation', _conversationId);
 }
 
-export function getSocket(): Socket {
+function ensureSocket(): Socket {
   if (!socket) {
-    socket = io(SOCKET_URL, { autoConnect: false });
+    socket = io(SOCKET_URL, {
+      autoConnect:          false,
+      reconnection:         true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay:    1000,
+      reconnectionDelayMax: 10000,
+    });
+    socket.on('connect', rejoinRooms);
   }
   return socket;
+}
+
+export function getSocket(): Socket {
+  return ensureSocket();
 }
 
 /**
@@ -24,33 +35,29 @@ export function getSocket(): Socket {
  * Re-entra automaticamente nas rooms após reconexão.
  */
 export function connectSocket(workspaceId: string, accessToken?: string) {
-  // Se já tem socket mas o token mudou, reconecta
-  if (socket && accessToken) {
-    const currentToken = socket.auth && (socket.auth as Record<string, string>).token;
-    if (currentToken !== accessToken) {
-      socket.disconnect();
+  // Garante que o socket existe (com rejoinRooms registrado)
+  ensureSocket();
+
+  // Se o token mudou num socket JÁ conectado → reconecta com novo token
+  if (accessToken && socket!.connected) {
+    const currentToken = (socket!.auth as Record<string, string>)?.token;
+    if (currentToken && currentToken !== accessToken) {
+      socket!.disconnect();
       socket = null;
+      ensureSocket();
     }
   }
 
-  if (!socket) {
-    socket = io(SOCKET_URL, {
-      autoConnect:   false,
-      reconnection:  true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay:    1000,
-      reconnectionDelayMax: 10000,
-      auth: accessToken ? { token: accessToken } : undefined,
-    });
-    // Re-join rooms every time the socket connects (initial + after reconnect)
-    socket.on('connect', rejoinRooms);
+  // Injeta o token (seguro fazer antes do primeiro connect, pois autoConnect=false)
+  if (accessToken) {
+    (socket as any).auth = { token: accessToken };
   }
 
   _workspaceId = workspaceId;
 
-  if (!socket.connected) socket.connect();
-  socket.emit('join:workspace', workspaceId);
-  return socket;
+  if (!socket!.connected) socket!.connect();
+  socket!.emit('join:workspace', workspaceId);
+  return socket!;
 }
 
 export function joinConversation(conversationId: string) {

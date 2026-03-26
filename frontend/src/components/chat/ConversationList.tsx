@@ -6,7 +6,7 @@ import { ptBR } from 'date-fns/locale';
 import clsx from 'clsx';
 import api from '@/lib/api';
 import { getSocket } from '@/lib/socket';
-import type { Conversation } from '@/types';
+import type { Conversation, Message } from '@/types';
 import { Search, Filter, X, ChevronDown, AlertTriangle } from 'lucide-react';
 
 interface Props {
@@ -52,8 +52,8 @@ export default function ConversationList({ workspaceId, selected, onSelect }: Pr
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (showLoader = true) => {
+    if (showLoader) setLoading(true);
     try {
       const params: Record<string, string> = { status, limit: '50' };
       if (filters.departmentId) params.departmentId = filters.departmentId;
@@ -61,7 +61,7 @@ export default function ConversationList({ workspaceId, selected, onSelect }: Pr
       const { data } = await api.get(`/workspaces/${workspaceId}/conversations`, { params });
       setConversations(data.data);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   }, [workspaceId, status, filters]);
 
@@ -69,17 +69,80 @@ export default function ConversationList({ workspaceId, selected, onSelect }: Pr
 
   useEffect(() => {
     const socket = getSocket();
-    const onNew     = () => load();
-    const onUpdated = (conv: Partial<Conversation> & { conversationId: string }) => {
-      setConversations((prev) => prev.map((c) => c.id === conv.conversationId ? { ...c, ...conv } : c));
+
+    function reorder(list: Conversation[]) {
+      return [...list].sort((a, b) => {
+        const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        return tb - ta;
+      });
+    }
+
+    function mediaLabel(type: string) {
+      if (type === 'audio')    return '🎵 Áudio';
+      if (type === 'image')    return '📷 Imagem';
+      if (type === 'video')    return '📹 Vídeo';
+      if (type === 'document') return '📄 Documento';
+      if (type === 'sticker')  return '🎨 Figurinha';
+      return '[mídia]';
+    }
+
+    // Nova mensagem: atualiza a conversa na lista e reordena
+    const onMessage = (msg: Message) => {
+      setConversations((prev) => {
+        const idx = prev.findIndex(c => c.id === msg.conversation_id);
+        if (idx === -1) return prev;
+        const conv = prev[idx];
+        const updated: Conversation = {
+          ...conv,
+          last_message_at:   msg.created_at,
+          last_message_text: msg.content || mediaLabel(msg.message_type),
+          // Só incrementa não lidas se for inbound E a conversa não estiver selecionada
+          unread_count: msg.direction === 'inbound' && selected !== msg.conversation_id
+            ? (conv.unread_count || 0) + 1
+            : conv.unread_count,
+        };
+        const next = [...prev];
+        next[idx] = updated;
+        return reorder(next);
+      });
     };
+
+    // Nova conversa: recarrega silenciosamente (sem skeleton) apenas se estiver na aba Abertas
+    const onNew = () => {
+      if (status === 'open') load(false);
+    };
+
+    // conversation:updated: fallback para quando o evento chegar via sala do workspace
+    const onUpdated = (data: {
+      conversationId: string;
+      lastMessageAt?: string;
+      lastMessageText?: string;
+      unreadCount?: number;
+    }) => {
+      setConversations((prev) => {
+        const idx = prev.findIndex(c => c.id === data.conversationId);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next[idx] = {
+          ...prev[idx],
+          last_message_at:   data.lastMessageAt   ?? prev[idx].last_message_at,
+          last_message_text: data.lastMessageText ?? prev[idx].last_message_text,
+          unread_count:      data.unreadCount     ?? prev[idx].unread_count,
+        };
+        return reorder(next);
+      });
+    };
+
+    socket.on('message:new',          onMessage);
     socket.on('conversation:new',     onNew);
     socket.on('conversation:updated', onUpdated);
     return () => {
+      socket.off('message:new',          onMessage);
       socket.off('conversation:new',     onNew);
       socket.off('conversation:updated', onUpdated);
     };
-  }, [load]);
+  }, [load, status, selected]);
 
   const activeFilters = (filters.departmentId ? 1 : 0) + (filters.inboxId ? 1 : 0);
 
