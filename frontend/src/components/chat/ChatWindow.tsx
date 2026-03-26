@@ -10,7 +10,7 @@ import { joinConversation, getSocket } from '@/lib/socket';
 import type { Conversation, Message, Label, CannedResponse } from '@/types';
 import {
   Send, Check, CheckCheck, AlertCircle,
-  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip, Image,
+  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip,
 } from 'lucide-react';
 
 interface Props {
@@ -40,11 +40,9 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   const [labelOpen,     setLabelOpen]     = useState(false);
   const [showCsat,      setShowCsat]      = useState(false);
   const [csatRating,    setCsatRating]    = useState(0);
+  const [csatSent,      setCsatSent]      = useState(false);
   const [uploading,     setUploading]     = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [templates,     setTemplates]     = useState<{name: string; language: string; status: string; components: unknown[]}[]>([]);
-  const [tplLoading,    setTplLoading]    = useState(false);
   const bottomRef  = useRef<HTMLDivElement>(null);
   const assignRef  = useRef<HTMLDivElement>(null);
   const labelRef   = useRef<HTMLDivElement>(null);
@@ -214,28 +212,11 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     }
   }
 
-  async function openTemplates() {
-    setShowTemplates(true);
-    if (templates.length || !currentWorkspace) return;
-    setTplLoading(true);
-    try {
-      const { data } = await api.get(`/workspaces/${currentWorkspace.id}/templates`, {
-        params: { inboxId: conversation.inbox_id },
-      });
-      setTemplates(data);
-    } finally {
-      setTplLoading(false);
-    }
-  }
-
-  async function sendTemplate(templateName: string, language: string) {
-    if (!currentWorkspace) return;
-    await api.post(`/workspaces/${currentWorkspace.id}/templates/send`, {
-      conversationId: conversation.id,
-      templateName,
-      language,
-    });
-    setShowTemplates(false);
+  async function sendCsatRequest() {
+    // Envia mensagem de pesquisa CSAT para o cliente via WhatsApp
+    const csatMsg = `Olá! Seu atendimento foi encerrado. Como você avalia nosso serviço hoje?\n\nResponda com um número:\n1 ⭐ - Péssimo\n2 ⭐ - Ruim\n3 ⭐ - Regular\n4 ⭐ - Bom\n5 ⭐ - Ótimo`;
+    await api.post(`/conversations/${conversation.id}/messages`, { content: csatMsg });
+    setCsatSent(true);
   }
 
   async function submitCsat() {
@@ -245,6 +226,8 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
       { rating: csatRating }
     );
     setShowCsat(false);
+    setCsatSent(false);
+    setCsatRating(0);
     onStatusChange({ ...conversation, csat_rating: csatRating });
   }
 
@@ -335,25 +318,16 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
           )}
         </div>
 
-        {/* Templates HSM */}
-        <button
-          onClick={openTemplates}
-          className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-          title="Enviar template HSM"
-        >
-          <FileText className="w-4 h-4" />
-        </button>
-
         {/* CSAT */}
         <button
-          onClick={() => setShowCsat(true)}
+          onClick={() => { setShowCsat(true); setCsatSent(false); setCsatRating(0); }}
           className={clsx(
             'flex-shrink-0 p-1.5 rounded-lg transition-colors',
             conversation.csat_rating
               ? 'text-yellow-500 hover:bg-yellow-50'
               : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
           )}
-          title={conversation.csat_rating ? `CSAT: ${conversation.csat_rating}/5` : 'Registrar CSAT'}
+          title={conversation.csat_rating ? `CSAT: ${conversation.csat_rating}/5` : 'Pesquisa de satisfação'}
         >
           <Star className={clsx('w-4 h-4', conversation.csat_rating && 'fill-yellow-400')} />
         </button>
@@ -538,72 +512,53 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      {/* ── Templates Modal ──────────────────────────────────── */}
-      {showTemplates && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowTemplates(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-96 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Templates HSM</h3>
-              <button onClick={() => setShowTemplates(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {tplLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : templates.length === 0 ? (
-              <div className="text-center py-8 text-gray-400 text-sm">
-                <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                Nenhum template disponível nesta inbox
-              </div>
-            ) : (
-              <div className="overflow-y-auto space-y-2 flex-1">
-                {templates.map((tpl, i) => (
-                  <button
-                    key={i}
-                    onClick={() => sendTemplate(tpl.name, tpl.language)}
-                    className="w-full text-left rounded-xl border border-gray-200 p-3 hover:border-brand-300 hover:bg-brand-50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-gray-900 text-sm">{tpl.name}</span>
-                      <span className={clsx(
-                        'text-xs px-1.5 py-0.5 rounded-full',
-                        tpl.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                      )}>
-                        {tpl.status || 'PENDING'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-400">{tpl.language}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── CSAT Modal ────────────────────────────────────────── */}
       {showCsat && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowCsat(false)}>
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-80" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Avaliação de atendimento</h3>
+              <h3 className="font-semibold text-gray-900">Pesquisa de satisfação</h3>
               <button onClick={() => setShowCsat(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">Como foi o atendimento nesta conversa?</p>
-            <div className="flex gap-2 justify-center mb-5">
-              {[1, 2, 3, 4, 5].map(n => (
-                <button key={n} onClick={() => setCsatRating(n)} className="transition-transform hover:scale-110">
-                  <Star className={clsx('w-8 h-8', n <= csatRating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300')} />
+
+            {/* Step 1 — send to client */}
+            {!csatSent ? (
+              <>
+                <p className="text-sm text-gray-500 mb-4">
+                  Envie uma pesquisa de satisfação para o cliente responder pelo WhatsApp.
+                </p>
+                <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-600 mb-4 leading-relaxed">
+                  "Como você avalia nosso serviço hoje? Responda com 1 a 5 ⭐"
+                </div>
+                <button onClick={sendCsatRequest} className="btn-primary w-full mb-2">
+                  Enviar pesquisa ao cliente
                 </button>
-              ))}
-            </div>
-            <button onClick={submitCsat} disabled={!csatRating} className="btn-primary w-full">
-              Salvar avaliação
-            </button>
+                <button onClick={() => setShowCsat(false)} className="btn-secondary w-full text-sm">
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              /* Step 2 — record the rating after client replies */
+              <>
+                <p className="text-sm text-gray-500 mb-1">Pesquisa enviada! ✓</p>
+                <p className="text-sm text-gray-400 mb-4">Após o cliente responder, registre a nota abaixo:</p>
+                <div className="flex gap-2 justify-center mb-5">
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <button key={n} onClick={() => setCsatRating(n)} className="transition-transform hover:scale-110">
+                      <Star className={clsx('w-8 h-8', n <= csatRating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300')} />
+                    </button>
+                  ))}
+                </div>
+                <button onClick={submitCsat} disabled={!csatRating} className="btn-primary w-full mb-2">
+                  Salvar nota
+                </button>
+                <button onClick={() => setShowCsat(false)} className="btn-secondary w-full text-sm">
+                  Fechar
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
