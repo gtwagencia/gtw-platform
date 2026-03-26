@@ -130,32 +130,13 @@ io.use((socket, next) => {
   }
 });
 
-io.on('connection', async (socket) => {
+io.on('connection', (socket) => {
   const userId = socket.data.user?.sub;
   logger.info('Socket connected', { id: socket.id, userId });
 
-  // Auto-join: entra em todos os workspaces do usuário imediatamente na conexão.
-  // Evita race condition onde mensagens chegam antes do join:workspace ser processado.
-  try {
-    const { query: dbQuery } = require('./config/database');
-    const isSuperAdmin = socket.data.user?.isSuperAdmin;
-    let wsRows;
-    if (isSuperAdmin) {
-      const r = await dbQuery('SELECT id AS workspace_id FROM workspaces');
-      wsRows = r.rows;
-    } else {
-      const r = await dbQuery(
-        'SELECT workspace_id FROM workspace_memberships WHERE user_id = $1',
-        [userId]
-      );
-      wsRows = r.rows;
-    }
-    for (const row of wsRows) {
-      socket.join(`ws:${row.workspace_id}`);
-    }
-  } catch { /* silently ignore */ }
+  // ── Handlers registrados SINCRONAMENTE antes de qualquer await ────────────
 
-  // join:workspace mantido para compatibilidade (já entrou acima, mas não custa)
+  // join:workspace — validado contra workspaces do usuário
   socket.on('join:workspace', async (workspaceId) => {
     try {
       const { query: dbQuery } = require('./config/database');
@@ -169,7 +150,7 @@ io.on('connection', async (socket) => {
     } catch { /* silently ignore */ }
   });
 
-  // Conversation join — validado contra ownership
+  // join:conversation — validado contra ownership
   socket.on('join:conversation', async (conversationId) => {
     try {
       const { query: dbQuery } = require('./config/database');
@@ -186,6 +167,23 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('disconnect', () => logger.info('Socket disconnected', { id: socket.id, userId }));
+
+  // ── Auto-join em background (não bloqueia o registro dos handlers) ────────
+  // Garante que o socket já entre nas salas dos workspaces do usuário sem
+  // depender do cliente emitir join:workspace (evita race condition).
+  ;(async () => {
+    try {
+      const { query: dbQuery } = require('./config/database');
+      const isSuperAdmin = socket.data.user?.isSuperAdmin;
+      const r = isSuperAdmin
+        ? await dbQuery('SELECT id AS workspace_id FROM workspaces')
+        : await dbQuery(
+            'SELECT workspace_id FROM workspace_memberships WHERE user_id = $1',
+            [userId]
+          );
+      for (const row of r.rows) socket.join(`ws:${row.workspace_id}`);
+    } catch { /* silently ignore */ }
+  })();
 });
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────
