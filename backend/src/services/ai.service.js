@@ -47,11 +47,15 @@ async function callLLM({ provider, apiKey, model, system, messages, maxTokens = 
 
 async function getConversationMessages(conversationId, includePrivate = false) {
   const r = await query(
-    `SELECT direction, content, sender_name, created_at, is_private
+    `SELECT direction, content, sender_name, created_at, is_private, message_type, extracted_text
      FROM messages
      WHERE conversation_id = $1
-       AND content IS NOT NULL AND content != ''
        ${includePrivate ? '' : "AND is_private = false"}
+       AND (
+         (content IS NOT NULL AND content != '')
+         OR extracted_text IS NOT NULL
+         OR message_type NOT IN ('text')
+       )
      ORDER BY created_at DESC
      LIMIT 30`,
     [conversationId]
@@ -64,6 +68,17 @@ function formatTranscript(messages) {
     const role = m.direction === 'outbound'
       ? `Atendente${m.sender_name ? ` (${m.sender_name})` : ''}`
       : 'Cliente';
+
+    if (m.extracted_text) {
+      // Limita texto do PDF a 3000 chars por mensagem para não explodir o contexto
+      const preview = m.extracted_text.slice(0, 3000);
+      return `${role} [PDF enviado]:\n---\n${preview}\n---`;
+    }
+    if (m.message_type === 'image')    return `${role}: [imagem enviada]`;
+    if (m.message_type === 'audio')    return `${role}: [áudio enviado]`;
+    if (m.message_type === 'video')    return `${role}: [vídeo enviado]`;
+    if (m.message_type === 'document') return `${role}: [documento enviado: ${m.content || ''}]`;
+    if (m.message_type === 'sticker')  return `${role}: [figurinha]`;
     return `${role}: ${m.content}`;
   }).join('\n');
 }
@@ -74,18 +89,23 @@ async function analyzeConversation(conversationId, apiKey, provider = 'anthropic
 
   const transcript   = formatTranscript(messages);
   const systemPrompt = `Você é um assistente de CRM que analisa conversas de WhatsApp entre atendentes e clientes.
-Sua tarefa é classificar o lead em uma das seguintes etapas:
+Sua tarefa é classificar o lead e extrair informações comerciais relevantes.
+
+Classifique o lead em uma das seguintes etapas:
 - "Novo Lead": cliente acabou de entrar em contato, ainda não foi atendido ou apenas trocou cumprimentos
 - "Em Atendimento": há interação ativa, o cliente está sendo atendido, perguntas sendo respondidas
 - "Qualificado para Venda": cliente demonstrou interesse real em comprar, pediu preços, demonstrou intenção clara
 - "Comprou": cliente confirmou compra, pagamento realizado, negócio fechado
 - "Negócio Perdido": cliente desistiu, não tem interesse, pediu para não ser mais contatado
 
+Se houver documentos PDF na conversa (orçamentos, propostas, etc.), analise o conteúdo e extraia o valor total do negócio.
+
 Responda SOMENTE com um JSON no formato:
 {
   "stage": "<nome exato da etapa>",
   "summary": "<resumo de 1-2 frases sobre o lead e situação atual>",
-  "confidence": <número de 0 a 1>
+  "confidence": <número de 0 a 1>,
+  "deal_value": <valor numérico em reais se encontrado em documentos, ou null>
 }`;
 
   try {
@@ -205,6 +225,13 @@ async function analyzeDeal(dealId, workspaceId) {
       [workspaceId, stageName]
     );
     if (stageRes.rows.length) updates.stage_id = stageRes.rows[0].id;
+  }
+
+  // Atualiza valor do deal se IA extraiu de documentos e o campo ainda está zerado
+  if (result.deal_value && typeof result.deal_value === 'number' && result.deal_value > 0) {
+    const dealRes = await query('SELECT value FROM deals WHERE id = $1', [dealId]);
+    const currentValue = parseFloat(dealRes.rows[0]?.value || 0);
+    if (currentValue === 0) updates.value = result.deal_value;
   }
 
   const fields = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`);

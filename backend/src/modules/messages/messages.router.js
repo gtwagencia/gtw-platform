@@ -54,6 +54,11 @@ router.post('/', authenticate, assertConversationAccess, async (req, res, next) 
       { content, messageType, mediaUrl, isPrivate: Boolean(isPrivate) }
     );
 
+    // Extrai texto de PDFs enviados pelo painel para análise de IA
+    if (messageType === 'document' && mediaUrl && mediaUrl.toLowerCase().endsWith('.pdf')) {
+      require('../../services/pdf.service').extractPdfText(message.id, mediaUrl).catch(() => {});
+    }
+
     // Emite para o room da conversa E para o workspace inteiro
     // para garantir entrega mesmo quando join:conversation não completou
     const convRes = await query(

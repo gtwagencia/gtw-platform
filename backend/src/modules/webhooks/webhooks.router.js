@@ -294,6 +294,11 @@ router.post('/evolution/:inboxId', async (req, res) => {
         });
         if (!message) continue;
 
+        // Extrai texto de PDFs recebidos para análise de IA
+        if (messageType === 'document' && mediaMimeType === 'application/pdf' && mediaUrl && message.id) {
+          require('../../services/pdf.service').extractPdfText(message.id, mediaUrl).catch(() => {});
+        }
+
         await convSvc.refreshLastMessage(conversation.id);
         await query(`UPDATE conversations SET last_inbound_at = NOW() WHERE id = $1`, [conversation.id]);
 
