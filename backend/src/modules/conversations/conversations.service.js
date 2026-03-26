@@ -193,12 +193,21 @@ async function update(conversationId, workspaceId, body) {
   return r.rows[0];
 }
 
-async function refreshLastMessage(conversationId) {
+/**
+ * Atualiza last_message e unread_count.
+ * @param {string} conversationId
+ * @param {'inbound'|'outbound'} direction - outbound zera unread_count
+ */
+async function refreshLastMessage(conversationId, direction = 'inbound') {
+  const unreadExpr = direction === 'outbound'
+    ? '0'                    // agente respondeu → mensagens lidas
+    : 'c.unread_count + 1';  // cliente enviou → incrementa
+
   await query(
     `UPDATE conversations c
      SET last_message_at   = m.created_at,
          last_message_text = m.content,
-         unread_count      = c.unread_count + 1
+         unread_count      = ${unreadExpr}
      FROM (
        SELECT content, created_at FROM messages
        WHERE conversation_id = $1 AND is_private = false

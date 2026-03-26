@@ -114,6 +114,42 @@ async function runFollowUp(trigger) {
   }
 }
 
+// ── Backfill: move deals respondidos de "Novo Lead" para "Em Atendimento" ──
+// Cobre conversas antigas e qualquer edge case não capturado em tempo real.
+
+async function backfillAttending() {
+  try {
+    const r = await query(
+      `UPDATE deals
+       SET stage_id = sub.em_id, updated_at = NOW()
+       FROM (
+         SELECT d.id AS deal_id, atend.id AS em_id
+         FROM deals d
+         JOIN kanban_stages novo  ON novo.workspace_id  = d.workspace_id
+                                 AND novo.name          = 'Novo Lead'
+         JOIN kanban_stages atend ON atend.workspace_id = d.workspace_id
+                                 AND atend.name         = 'Em Atendimento'
+         WHERE d.stage_id = novo.id
+           AND d.conversation_id IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM messages m
+             WHERE m.conversation_id = d.conversation_id
+               AND m.direction = 'outbound'
+               AND m.is_private = false
+               AND m.sender_id IS NOT NULL   -- enviado por agente real, não bot
+           )
+       ) sub
+       WHERE deals.id = sub.deal_id
+       RETURNING deals.id`
+    );
+    if (r.rows.length) {
+      logger.info(`Backfill: ${r.rows.length} deals movidos para Em Atendimento`);
+    }
+  } catch (err) {
+    logger.warn('Backfill attending failed', { err: err.message });
+  }
+}
+
 // ── AI Analysis job ────────────────────────────────────────────────────────
 
 async function runAiAnalysis() {
@@ -181,9 +217,16 @@ function startJobs() {
     runFollowUp('3day').catch(err => logger.error('followUp 3day error', { err: err.message }));
   });
 
+  // Backfill: move deals respondidos para "Em Atendimento" — a cada 5 min
+  cron.schedule('*/5 * * * *', () => {
+    backfillAttending().catch(err => logger.error('Backfill attending error', { err: err.message }));
+  });
+
   // AI analysis — every 15 minutes
   cron.schedule('*/15 * * * *', () => {
-    runAiAnalysis().catch(err => logger.error('AI analysis error', { err: err.message }));
+    backfillAttending()  // garante estágio correto antes de analisar
+      .then(() => runAiAnalysis())
+      .catch(err => logger.error('AI analysis error', { err: err.message }));
   });
 
   // SLA breach check — every 5 minutes
@@ -194,4 +237,4 @@ function startJobs() {
   logger.info('Background jobs started (follow-up + AI analysis + SLA check)');
 }
 
-module.exports = { startJobs };
+module.exports = { startJobs, backfillAttending };

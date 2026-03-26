@@ -60,7 +60,7 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
 
   // Only public messages update last_message and trigger real WhatsApp send
   if (!isPrivate) {
-    await convSvc.refreshLastMessage(conversationId);
+    await convSvc.refreshLastMessage(conversationId, 'outbound');
 
     // Track first response time + reset bot_active when a real agent responds
     if (senderId) {

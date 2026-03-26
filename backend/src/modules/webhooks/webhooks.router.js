@@ -252,7 +252,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
           });
           if (!message) continue; // Already in DB (sent from panel, deduplicated by evolution_msg_id)
 
-          await convSvc.refreshLastMessage(conversation.id);
+          await convSvc.refreshLastMessage(conversation.id, 'outbound');
 
           // Move deal Novo Lead → Em Atendimento quando responde pelo celular
           const kanbanSvc = require('../kanban/kanban.service');
@@ -264,6 +264,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
             conversationId:  conversation.id,
             lastMessageAt:   new Date(),
             lastMessageText: content,
+            unreadCount:     0,
           });
           continue;
         }

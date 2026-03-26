@@ -63,7 +63,15 @@ router.post('/', authenticate, assertConversationAccess, async (req, res, next) 
     const workspaceId = convRes.rows[0]?.workspace_id;
     const io = req.app.get('io');
     io?.to(`conv:${req.params.conversationId}`).emit('message:new', message);
-    if (workspaceId) io?.to(`ws:${workspaceId}`).emit('message:new', message);
+    if (workspaceId) {
+      io?.to(`ws:${workspaceId}`).emit('message:new', message);
+      io?.to(`ws:${workspaceId}`).emit('conversation:updated', {
+        conversationId: req.params.conversationId,
+        lastMessageAt:  message.created_at,
+        lastMessageText: message.content,
+        unreadCount:    0,
+      });
+    }
 
     res.status(201).json(message);
   } catch (err) { next(err); }
