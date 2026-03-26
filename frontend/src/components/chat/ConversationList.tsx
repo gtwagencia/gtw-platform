@@ -220,7 +220,12 @@ export default function ConversationList({ workspaceId, selected, onSelect }: Pr
           filtered.map((conv) => (
             <button
               key={conv.id}
-              onClick={() => onSelect(conv)}
+              onClick={() => {
+                setConversations((prev) =>
+                  prev.map((c) => c.id === conv.id ? { ...c, unread_count: 0 } : c)
+                );
+                onSelect(conv);
+              }}
               className={clsx(
                 'w-full flex gap-3 p-3 mx-1 rounded-xl text-left transition-colors',
                 selected === conv.id ? 'bg-brand-50' : 'hover:bg-gray-50',
