@@ -76,6 +76,11 @@ async function send(conversationId, senderId, { content, messageType = 'text', m
          WHERE id = $1`,
         [conversationId]
       );
+
+      // Move deal Novo Lead → Em Atendimento e dispara qualificação IA
+      require('../kanban/kanban.service')
+        .moveToAttending(conversationId)
+        .catch(() => {});
     }
 
     // Send via Evolution API

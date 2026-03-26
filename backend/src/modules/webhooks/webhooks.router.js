@@ -253,6 +253,11 @@ router.post('/evolution/:inboxId', async (req, res) => {
           if (!message) continue; // Already in DB (sent from panel, deduplicated by evolution_msg_id)
 
           await convSvc.refreshLastMessage(conversation.id);
+
+          // Move deal Novo Lead → Em Atendimento quando responde pelo celular
+          const kanbanSvc = require('../kanban/kanban.service');
+          kanbanSvc.moveToAttending(conversation.id).catch(() => {});
+
           io?.to(`conv:${conversation.id}`).emit('message:new', message);
           io?.to(`ws:${inbox.workspace_id}`).emit('message:new', message);
           io?.to(`ws:${inbox.workspace_id}`).emit('conversation:updated', {

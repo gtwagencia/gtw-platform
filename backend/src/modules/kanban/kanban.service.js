@@ -212,9 +212,46 @@ async function getBoard(workspaceId) {
   }));
 }
 
+/**
+ * Move o deal de "Novo Lead" para "Em Atendimento" quando um agente responde.
+ * Só avança — nunca retrocede de Qualificado/Comprou/etc.
+ * Depois dispara análise de IA de forma assíncrona (se habilitada no workspace).
+ */
+async function moveToAttending(conversationId) {
+  const r = await query(
+    `UPDATE deals
+     SET stage_id = sub.em_atendimento_id,
+         updated_at = NOW()
+     FROM (
+       SELECT d.id                AS deal_id,
+              d.workspace_id,
+              atend.id            AS em_atendimento_id
+       FROM deals d
+       JOIN kanban_stages novo  ON novo.workspace_id  = d.workspace_id
+                               AND novo.name          = 'Novo Lead'
+       JOIN kanban_stages atend ON atend.workspace_id = d.workspace_id
+                               AND atend.name         = 'Em Atendimento'
+       WHERE d.conversation_id = $1
+         AND d.stage_id = novo.id
+     ) sub
+     WHERE deals.id = sub.deal_id
+     RETURNING deals.id AS deal_id, deals.workspace_id`,
+    [conversationId]
+  );
+
+  if (r.rows.length) {
+    // Dispara análise de IA assíncrona (qualifica o lead em seguida)
+    const aiSvc = require('../../services/ai.service');
+    for (const row of r.rows) {
+      aiSvc.analyzeDeal(row.deal_id, row.workspace_id)
+        .catch(() => {});
+    }
+  }
+}
+
 module.exports = {
   seedDefaultStages,
   listStages, createStage, updateStage, removeStage,
   listDeals, createDeal, createDealFromConversation, updateDeal, removeDeal,
-  getBoard,
+  getBoard, moveToAttending,
 };

@@ -122,10 +122,10 @@ async function runAiAnalysis() {
      FROM deals d
      JOIN workspaces w ON w.id = d.workspace_id
      WHERE w.ai_analysis_enabled = true
-       AND w.anthropic_api_key IS NOT NULL
+       AND (w.anthropic_api_key IS NOT NULL OR w.openai_api_key IS NOT NULL)
        AND d.conversation_id IS NOT NULL
-       AND (d.ai_analyzed_at IS NULL OR d.ai_analyzed_at < NOW() - interval '1 hour')
-     ORDER BY d.created_at DESC
+       AND (d.ai_analyzed_at IS NULL OR d.ai_analyzed_at < NOW() - interval '30 minutes')
+     ORDER BY d.updated_at DESC
      LIMIT 20`
   );
 
