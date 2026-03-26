@@ -96,6 +96,7 @@ router.post('/send', authenticate, workspaceContext, async (req, res, next) => {
 
     const io = req.app.get('io');
     io?.to(`conv:${conversationId}`).emit('message:new', msgRes.rows[0]);
+    io?.to(`ws:${req.params.workspaceId}`).emit('message:new', msgRes.rows[0]);
 
     res.json(msgRes.rows[0]);
   } catch (err) {

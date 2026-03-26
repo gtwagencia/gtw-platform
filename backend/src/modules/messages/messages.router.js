@@ -54,9 +54,16 @@ router.post('/', authenticate, assertConversationAccess, async (req, res, next) 
       { content, messageType, mediaUrl, isPrivate: Boolean(isPrivate) }
     );
 
-    req.app.get('io')
-      ?.to(`conv:${req.params.conversationId}`)
-      .emit('message:new', message);
+    // Emite para o room da conversa E para o workspace inteiro
+    // para garantir entrega mesmo quando join:conversation não completou
+    const convRes = await query(
+      'SELECT workspace_id FROM conversations WHERE id = $1',
+      [req.params.conversationId]
+    );
+    const workspaceId = convRes.rows[0]?.workspace_id;
+    const io = req.app.get('io');
+    io?.to(`conv:${req.params.conversationId}`).emit('message:new', message);
+    if (workspaceId) io?.to(`ws:${workspaceId}`).emit('message:new', message);
 
     res.status(201).json(message);
   } catch (err) { next(err); }

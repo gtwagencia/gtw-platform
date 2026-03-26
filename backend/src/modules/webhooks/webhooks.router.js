@@ -254,6 +254,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
 
           await convSvc.refreshLastMessage(conversation.id);
           io?.to(`conv:${conversation.id}`).emit('message:new', message);
+          io?.to(`ws:${inbox.workspace_id}`).emit('message:new', message);
           io?.to(`ws:${inbox.workspace_id}`).emit('conversation:updated', {
             conversationId:  conversation.id,
             lastMessageAt:   new Date(),
@@ -333,6 +334,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
                   content: botReply, messageType: 'text', isPrivate: false,
                 });
                 io?.to(`conv:${conversation.id}`).emit('message:new', botMsg);
+                io?.to(`ws:${inbox.workspace_id}`).emit('message:new', botMsg);
                 io?.to(`ws:${inbox.workspace_id}`).emit('conversation:updated', {
                   conversationId:  conversation.id,
                   lastMessageAt:   new Date(),
@@ -350,6 +352,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
           });
         }
         io?.to(`conv:${conversation.id}`).emit('message:new', message);
+        io?.to(`ws:${inbox.workspace_id}`).emit('message:new', message);
         io?.to(`ws:${inbox.workspace_id}`).emit('conversation:updated', {
           conversationId:  conversation.id,
           lastMessageAt:   new Date(),
