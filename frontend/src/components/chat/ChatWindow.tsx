@@ -249,10 +249,10 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   }
 
   const statusIcon = (s: string) => {
-    if (s === 'sent')      return <Check       className="w-3.5 h-3.5 opacity-70" title="Enviado" />;
-    if (s === 'delivered') return <CheckCheck  className="w-3.5 h-3.5 opacity-90" title="Entregue" />;
-    if (s === 'read')      return <CheckCheck  className="w-3.5 h-3.5 text-blue-300" title="Lido" />;
-    if (s === 'failed')    return <AlertCircle className="w-3.5 h-3.5 text-red-300" title="Falhou" />;
+    if (s === 'sent')      return <Check       className="w-3.5 h-3.5 opacity-70" />;
+    if (s === 'delivered') return <CheckCheck  className="w-3.5 h-3.5 opacity-90" />;
+    if (s === 'read')      return <CheckCheck  className="w-3.5 h-3.5 text-blue-300" />;
+    if (s === 'failed')    return <AlertCircle className="w-3.5 h-3.5 text-red-300" />;
     return null;
   };
 
