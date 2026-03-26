@@ -58,6 +58,8 @@ export interface Workspace {
   business_hours: BusinessHours | null;
   follow_up_enabled: boolean;
   ai_analysis_enabled: boolean;
+  ai_provider: string | null;
+  ai_model: string | null;
   sla_response_minutes: number | null;
   created_at: string;
   member_count?: number;
