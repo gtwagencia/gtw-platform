@@ -74,7 +74,9 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     };
     const onStatus = ({ evolutionMsgId, status }: { evolutionMsgId: string; status: string }) => {
       setMessages((prev) => prev.map((m) =>
-        m.evolution_msg_id === evolutionMsgId ? { ...m, status } : m
+        m.evolution_msg_id === evolutionMsgId
+          ? { ...m, status: status as Message['status'] }
+          : m
       ));
     };
     socket.on('message:new',    onNew);
