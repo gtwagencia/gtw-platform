@@ -84,7 +84,13 @@ function formatTranscript(messages) {
 }
 
 async function analyzeConversation(conversationId, apiKey, provider = 'anthropic', model = null) {
-  const messages = await getConversationMessages(conversationId);
+  let messages;
+  try {
+    messages = await getConversationMessages(conversationId);
+  } catch (err) {
+    logger.warn('getConversationMessages failed', { conversationId, err: err.message });
+    return null;
+  }
   if (!messages.length) return null;
 
   const transcript   = formatTranscript(messages);
