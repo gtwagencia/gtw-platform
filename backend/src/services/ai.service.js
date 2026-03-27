@@ -198,12 +198,14 @@ async function generateChatbotResponse(conversationId, systemPrompt, apiKey, pro
 
 async function analyzeDeal(dealId, workspaceId) {
   const r = await query(
-    `SELECT d.id, d.conversation_id, d.contact_id, d.pipeline_id,
+    `SELECT d.id, d.conversation_id, d.contact_id, d.pipeline_id, d.ai_analyzed_at,
             ks.ai_prompt AS stage_ai_prompt,
-            w.anthropic_api_key, w.openai_api_key, w.ai_provider, w.ai_model, w.ai_analysis_enabled
+            w.anthropic_api_key, w.openai_api_key, w.ai_provider, w.ai_model, w.ai_analysis_enabled,
+            c.last_message_at
      FROM deals d
      JOIN workspaces w ON w.id = d.workspace_id
      LEFT JOIN kanban_stages ks ON ks.id = d.stage_id
+     LEFT JOIN conversations c ON c.id = d.conversation_id
      WHERE d.id = $1 AND d.workspace_id = $2`,
     [dealId, workspaceId]
   );
@@ -212,7 +214,16 @@ async function analyzeDeal(dealId, workspaceId) {
     return null;
   }
 
-  let { conversation_id, contact_id, pipeline_id, stage_ai_prompt, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled } = r.rows[0];
+  let { conversation_id, contact_id, pipeline_id, stage_ai_prompt, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled, ai_analyzed_at, last_message_at } = r.rows[0];
+
+  // Se já foi analisado antes, só re-analisa se houve mensagem nos últimos 30 minutos
+  if (ai_analyzed_at && last_message_at) {
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+    if (new Date(last_message_at) < thirtyMinAgo) {
+      logger.debug('analyzeDeal: skipped — last message older than 30 min', { dealId });
+      return null;
+    }
+  }
   const provider = ai_provider || 'anthropic';
   const apiKey   = provider === 'openai' ? openai_api_key : anthropic_api_key;
 
