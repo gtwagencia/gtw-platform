@@ -183,19 +183,27 @@ function DealCard({ deal, dragHandleProps, isDragging, onAnalyze, analyzing, wor
         </div>
 
         <div className="flex items-center gap-1">
-          {/* AI analyze button */}
-          <button
-            onClick={() => onAnalyze(deal.id)}
-            disabled={analyzing}
-            title="Analisar com IA"
-            className="p-1 text-gray-300 hover:text-indigo-500 transition-colors disabled:opacity-50"
-          >
-            {analyzing ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Brain className="w-3.5 h-3.5" />
-            )}
-          </button>
+          {/* AI analyze button — only when there's been communication */}
+          {(() => {
+            const canAnalyze = !!deal.conversation_id && !!deal.last_inbound_at;
+            return (
+              <button
+                onClick={() => canAnalyze && onAnalyze(deal.id)}
+                disabled={analyzing || !canAnalyze}
+                title={canAnalyze ? 'Analisar com IA' : 'Sem mensagens para analisar'}
+                className={clsx(
+                  'p-1 transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
+                  canAnalyze ? 'text-gray-300 hover:text-indigo-500' : 'text-gray-200 cursor-not-allowed'
+                )}
+              >
+                {analyzing ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Brain className="w-3.5 h-3.5" />
+                )}
+              </button>
+            );
+          })()}
 
           {/* Open conversation */}
           {deal.conversation_id && (
