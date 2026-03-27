@@ -42,15 +42,22 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   const [csatRating,    setCsatRating]    = useState(0);
   const [csatSent,      setCsatSent]      = useState(false);
   const [uploading,     setUploading]     = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const bottomRef  = useRef<HTMLDivElement>(null);
-  const assignRef  = useRef<HTMLDivElement>(null);
-  const labelRef   = useRef<HTMLDivElement>(null);
-  const textRef    = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef    = useRef<HTMLInputElement>(null);
+  const bottomRef       = useRef<HTMLDivElement>(null);
+  const assignRef       = useRef<HTMLDivElement>(null);
+  const labelRef        = useRef<HTMLDivElement>(null);
+  const textRef         = useRef<HTMLTextAreaElement>(null);
+  const conversationRef = useRef(conversation.id);
+
+  // Mantém ref sempre atualizado com o id da conversa atual
+  useEffect(() => {
+    conversationRef.current = conversation.id;
+  }, [conversation.id]);
 
   // ── Load messages ──────────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
+    setMessages([]);
     setMode('reply');
     setText('');
     setShowCanned(false);
@@ -63,10 +70,13 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
       .catch(() => {});
 
     joinConversation(conversation.id);
+  }, [conversation.id]);
 
+  // ── Socket listeners (registrado uma única vez, usa ref para filtrar) ──
+  useEffect(() => {
     const socket = getSocket();
     const onNew = (msg: Message) => {
-      if (msg.conversation_id === conversation.id) {
+      if (msg.conversation_id === conversationRef.current) {
         setMessages((prev) => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
       }
     };
@@ -83,7 +93,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
       socket.off('message:new',    onNew);
       socket.off('message:status', onStatus);
     };
-  }, [conversation.id]);
+  }, []);
 
   // Load agents, labels, canned
   useEffect(() => {
