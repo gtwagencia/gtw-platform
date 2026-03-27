@@ -89,9 +89,11 @@ async function analyzeConversation(conversationId, apiKey, provider = 'anthropic
     messages = await getConversationMessages(conversationId);
   } catch (err) {
     logger.warn('getConversationMessages failed', { conversationId, err: err.message });
-    return null;
+    throw Object.assign(new Error(`Erro ao buscar mensagens: ${err.message}`), { status: 400 });
   }
-  if (!messages.length) return null;
+  if (!messages.length) {
+    throw Object.assign(new Error('Conversa não tem mensagens para analisar'), { status: 400 });
+  }
 
   const transcript   = formatTranscript(messages);
   const systemPrompt = `Você é um assistente de CRM que analisa conversas de WhatsApp entre atendentes e clientes.
@@ -124,7 +126,7 @@ Responda SOMENTE com um JSON no formato:
     return JSON.parse(jsonMatch[0]);
   } catch (err) {
     logger.warn('AI analysis failed', { conversationId, err: err.message });
-    return null;
+    throw Object.assign(new Error(`Falha na API de IA: ${err.message}`), { status: 400 });
   }
 }
 
@@ -250,7 +252,7 @@ async function analyzeDeal(dealId, workspaceId) {
   }
 
   const result = await analyzeConversation(conversation_id, apiKey, provider, ai_model || null);
-  if (!result) return null;
+  if (!result) throw Object.assign(new Error('IA não retornou classificação (resposta inválida)'), { status: 400 });
 
   const stageNameMap = {
     'Novo Lead': 'Novo Lead', 'Em Atendimento': 'Em Atendimento',

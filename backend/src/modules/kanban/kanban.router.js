@@ -86,30 +86,12 @@ router.post('/deals/:dealId/analyze', authenticate, workspaceContext, async (req
   try {
     const { dealId, workspaceId } = req.params;
     const result = await aiSvc.analyzeDeal(dealId, workspaceId);
-    if (!result) {
-      // Diagnóstico: verificar o que está faltando
-      const { query } = require('../../config/database');
-      const r = await query(
-        `SELECT d.conversation_id, d.contact_id,
-                w.ai_analysis_enabled, w.ai_provider,
-                (w.openai_api_key IS NOT NULL AND w.openai_api_key != '') AS has_openai,
-                (w.anthropic_api_key IS NOT NULL AND w.anthropic_api_key != '') AS has_anthropic
-         FROM deals d JOIN workspaces w ON w.id = d.workspace_id
-         WHERE d.id = $1 AND d.workspace_id = $2`,
-        [dealId, workspaceId]
-      );
-      const info = r.rows[0] || {};
-      const provider = info.ai_provider || 'anthropic';
-      const hasKey = provider === 'openai' ? info.has_openai : info.has_anthropic;
-      let reason = 'Análise não disponível';
-      if (!info.ai_analysis_enabled) reason = 'Análise de IA desativada nas configurações';
-      else if (!hasKey) reason = `Chave API ${provider === 'openai' ? 'OpenAI' : 'Anthropic'} não configurada`;
-      else if (!info.conversation_id && !info.contact_id) reason = 'Deal sem contato ou conversa vinculada';
-      else if (!info.conversation_id) reason = 'Nenhuma conversa encontrada para este contato';
-      return res.status(400).json({ error: reason });
-    }
+    if (!result) return res.status(400).json({ error: 'Análise não disponível (verifique configurações de IA)' });
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: err.message });
+    next(err);
+  }
 });
 
 module.exports = router;
