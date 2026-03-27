@@ -81,8 +81,8 @@ function StageRow({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="flex items-center gap-3 p-3 bg-white">
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 bg-white">
         <div
           className="w-3 h-3 rounded-full flex-shrink-0"
           style={{ backgroundColor: stage.color }}
@@ -290,27 +290,36 @@ function PipelineCard({
   }
 
   return (
-    <div className="card">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
       {/* Header row */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 px-5 py-4">
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+          className="flex items-center gap-3 flex-1 min-w-0 text-left"
         >
           {expanded ? (
             <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
           ) : (
             <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
           )}
-          <Layers className="w-4 h-4 text-brand-500 flex-shrink-0" />
-          <span className="font-semibold text-gray-900 truncate">{pipeline.name}</span>
-          {pipeline.is_default && (
-            <span className="flex items-center gap-1 text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full flex-shrink-0">
-              <Star className="w-3 h-3" /> Padrão
-            </span>
-          )}
-          <span className="text-xs text-gray-400 flex-shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+            <Layers className="w-4 h-4 text-brand-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-gray-900">{pipeline.name}</span>
+              {pipeline.is_default && (
+                <span className="flex items-center gap-1 text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">
+                  <Star className="w-3 h-3" /> Padrão
+                </span>
+              )}
+            </div>
+            {pipeline.description && (
+              <p className="text-xs text-gray-500 mt-0.5 truncate">{pipeline.description}</p>
+            )}
+          </div>
+          <span className="text-xs text-gray-400 flex-shrink-0 bg-gray-100 px-2 py-1 rounded-full">
             {pipeline.stages.length} etapas
           </span>
         </button>
@@ -347,18 +356,18 @@ function PipelineCard({
       </div>
 
       {error && (
-        <div className="mt-3 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+        <div className="mx-5 mb-3 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           {error}
         </div>
       )}
 
       {expanded && (
-        <div className="mt-4 space-y-4 border-t border-gray-100 pt-4">
+        <div className="border-t border-gray-100 px-5 py-6 space-y-6 bg-gray-50">
           {/* Basic info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Nome *</label>
               <input
                 type="text"
                 value={form.name}
@@ -367,7 +376,7 @@ function PipelineCard({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Descrição</label>
               <input
                 type="text"
                 value={form.description}
@@ -378,20 +387,20 @@ function PipelineCard({
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <label className="flex items-center gap-2.5 text-sm text-gray-700 cursor-pointer">
             <input
               type="checkbox"
               checked={form.isDefault}
               onChange={e => setForm(f => ({ ...f, isDefault: e.target.checked }))}
               className="rounded"
             />
-            Funil padrão (usado quando inbox não tem funil específico)
+            <span>Funil padrão <span className="text-gray-400">(usado quando inbox não tem funil específico)</span></span>
           </label>
 
           {/* Inboxes */}
           {inboxes.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Inboxes vinculados</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2.5">Inboxes vinculados</label>
               <div className="flex flex-wrap gap-2">
                 {inboxes.map(inbox => (
                   <button
@@ -415,7 +424,7 @@ function PipelineCard({
           {/* Departments */}
           {departments.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Departamentos vinculados</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2.5">Departamentos vinculados</label>
               <div className="flex flex-wrap gap-2">
                 {departments.map(dept => (
                   <button
@@ -442,7 +451,7 @@ function PipelineCard({
 
           {/* Stages */}
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-3">
               <label className="block text-sm font-medium text-gray-700">Etapas</label>
               <button
                 type="button"
@@ -466,7 +475,7 @@ function PipelineCard({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-gray-200">
             <button
               type="button"
               onClick={() => setExpanded(false)}
@@ -553,17 +562,21 @@ function NewPipelineForm({
   }
 
   return (
-    <div className="card border-2 border-brand-200">
-      <h3 className="font-semibold text-gray-900 mb-4">Novo Funil</h3>
+    <div className="bg-white rounded-2xl border-2 border-brand-300 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-brand-100 bg-brand-50">
+        <h3 className="font-semibold text-brand-900">Novo Funil</h3>
+        <p className="text-xs text-brand-600 mt-0.5">Preencha os dados do novo funil de atendimento</p>
+      </div>
 
+      <div className="px-5 py-6">
       {error && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+        <div className="mb-5 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           {error}
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
@@ -695,7 +708,7 @@ function NewPipelineForm({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center justify-end gap-2 pt-4 border-t border-gray-200">
           <button type="button" onClick={onCancel} className="btn-secondary text-sm">
             Cancelar
           </button>
@@ -713,6 +726,7 @@ function NewPipelineForm({
             Criar Funil
           </button>
         </div>
+      </div>
       </div>
     </div>
   );
@@ -790,7 +804,8 @@ export default function PipelinesPage() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full space-y-4">
+      <div className="flex-1 overflow-y-auto bg-gray-50">
+      <div className="max-w-4xl mx-auto px-6 py-8 space-y-5">
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -810,9 +825,9 @@ export default function PipelinesPage() {
             )}
 
             {pipelines.length === 0 && !showNewForm ? (
-              <div className="card text-center py-12">
-                <Layers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 mb-4">Nenhum funil criado ainda.</p>
+              <div className="card p-12 text-center">
+                <Layers className="w-14 h-14 text-gray-200 mx-auto mb-4" />
+                <p className="text-gray-500 mb-5">Nenhum funil criado ainda.</p>
                 <button
                   onClick={() => setShowNewForm(true)}
                   className="btn-primary text-sm inline-flex items-center gap-2"
@@ -836,6 +851,7 @@ export default function PipelinesPage() {
             )}
           </>
         )}
+      </div>
       </div>
     </>
   );
