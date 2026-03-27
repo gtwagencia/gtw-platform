@@ -250,7 +250,7 @@ function FilterBar({
   return (
     <div className="px-6 pt-4 pb-2 bg-white border-b border-gray-100">
       {/* Pipeline tabs */}
-      {pipelines.length > 1 && (
+      {pipelines.length > 0 && (
         <div className="flex items-center gap-1 mb-3 flex-wrap">
           {pipelines.map(p => (
             <button
@@ -264,7 +264,7 @@ function FilterBar({
               )}
             >
               {p.name}
-              {p.is_default && (
+              {p.is_default && pipelines.length > 1 && (
                 <span className="ml-1 text-xs opacity-60">(padrão)</span>
               )}
             </button>
@@ -280,38 +280,34 @@ function FilterBar({
         </div>
 
         {/* Assignee filter */}
-        {members.length > 0 && (
-          <select
-            value={filterAssigneeId}
-            onChange={e => onFilterAssignee(e.target.value)}
-            className={clsx(
-              'text-xs rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-500',
-              filterAssigneeId ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-600'
-            )}
-          >
-            <option value="">Todos os atendentes</option>
-            {members.map(m => (
-              <option key={m.user_id} value={m.user_id}>{m.name}</option>
-            ))}
-          </select>
-        )}
+        <select
+          value={filterAssigneeId}
+          onChange={e => onFilterAssignee(e.target.value)}
+          className={clsx(
+            'text-xs rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-500',
+            filterAssigneeId ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-600'
+          )}
+        >
+          <option value="">Todos os atendentes</option>
+          {members.map(m => (
+            <option key={m.user_id} value={m.user_id}>{m.name}</option>
+          ))}
+        </select>
 
         {/* Inbox filter */}
-        {availableInboxes.length > 0 && (
-          <select
-            value={filterInboxId}
-            onChange={e => onFilterInbox(e.target.value)}
-            className={clsx(
-              'text-xs rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-500',
-              filterInboxId ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-600'
-            )}
-          >
-            <option value="">Todos os inboxes</option>
-            {availableInboxes.map(i => (
-              <option key={i.id} value={i.id}>{i.name}</option>
-            ))}
-          </select>
-        )}
+        <select
+          value={filterInboxId}
+          onChange={e => onFilterInbox(e.target.value)}
+          className={clsx(
+            'text-xs rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-500',
+            filterInboxId ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-600'
+          )}
+        >
+          <option value="">Todos os inboxes</option>
+          {availableInboxes.map(i => (
+            <option key={i.id} value={i.id}>{i.name}</option>
+          ))}
+        </select>
 
         {hasFilters && (
           <button
@@ -363,19 +359,18 @@ export default function KanbanPage() {
   // Load supporting data once
   useEffect(() => {
     if (!currentWorkspace) return;
-    Promise.all([
-      api.get<Pipeline[]>(`/workspaces/${currentWorkspace.id}/pipelines`),
-      api.get<Inbox[]>(`/workspaces/${currentWorkspace.id}/inboxes`),
-      api.get<Member[]>(`/workspaces/${currentWorkspace.id}/members`),
-    ]).then(([pRes, iRes, mRes]) => {
-      setPipelines(pRes.data);
-      if (pRes.data.length > 0) {
-        const def = pRes.data.find(p => p.is_default) ?? pRes.data[0];
-        setSelectedPipelineId(def.id);
-      }
-      setInboxes(iRes.data);
-      setMembers(mRes.data);
-    }).catch(() => {});
+    api.get<Pipeline[]>(`/workspaces/${currentWorkspace.id}/pipelines`)
+      .then(r => {
+        setPipelines(r.data);
+        if (r.data.length > 0) {
+          const def = r.data.find(p => p.is_default) ?? r.data[0];
+          setSelectedPipelineId(def.id);
+        }
+      }).catch(() => {});
+    api.get<Inbox[]>(`/workspaces/${currentWorkspace.id}/inboxes`)
+      .then(r => setInboxes(r.data)).catch(() => {});
+    api.get<Member[]>(`/workspaces/${currentWorkspace.id}/members`)
+      .then(r => setMembers(r.data)).catch(() => {});
   }, [currentWorkspace]);
 
   useEffect(() => { loadBoard(); }, [loadBoard]);
@@ -453,9 +448,8 @@ export default function KanbanPage() {
         }
       />
 
-      {/* Filter bar — only shown when there's meaningful data */}
-      {(pipelines.length > 0 || members.length > 0 || inboxes.length > 0) && (
-        <FilterBar
+      {/* Filter bar */}
+      <FilterBar
           pipelines={pipelines}
           selectedPipelineId={selectedPipelineId}
           onSelectPipeline={(id) => { setSelectedPipelineId(id); setFilterInboxId(''); }}
@@ -467,7 +461,6 @@ export default function KanbanPage() {
           onFilterInbox={setFilterInboxId}
           linkedInboxIds={linkedInboxIds}
         />
-      )}
 
       {analyzeErr && (
         <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
