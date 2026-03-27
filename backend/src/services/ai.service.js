@@ -97,19 +97,21 @@ async function analyzeConversation(conversationId, apiKey, provider = 'anthropic
   const systemPrompt = `Você é um assistente de CRM que analisa conversas de WhatsApp entre atendentes e clientes.
 Sua tarefa é classificar o lead e extrair informações comerciais relevantes.
 
-Classifique o lead em uma das seguintes etapas:
-- "Novo Lead": cliente acabou de entrar em contato, ainda não foi atendido ou apenas trocou cumprimentos
-- "Em Atendimento": há interação ativa, o cliente está sendo atendido, perguntas sendo respondidas
-- "Qualificado para Venda": cliente demonstrou interesse real em comprar, pediu preços, demonstrou intenção clara
-- "Comprou": cliente confirmou compra, pagamento realizado, negócio fechado
-- "Negócio Perdido": cliente desistiu, não tem interesse, pediu para não ser mais contatado
+REGRA FUNDAMENTAL para classificação — leia com atenção:
+- "Novo Lead": NÃO há NENHUMA mensagem de "Atendente" na conversa. O cliente entrou em contato mas nenhum atendente respondeu ainda.
+- "Em Atendimento": existe AO MENOS UMA mensagem de "Atendente" na conversa, mesmo que curta ou apenas de saudação. Se o atendente respondeu qualquer coisa, já é "Em Atendimento".
+- "Qualificado para Venda": o cliente demonstrou interesse real em comprar, pediu orçamento, enviou especificações ou demonstrou intenção clara de fechar negócio.
+- "Comprou": cliente confirmou compra, pagamento realizado ou negócio explicitamente fechado.
+- "Negócio Perdido": cliente desistiu, disse que não tem interesse, pediu para parar de ser contatado ou sumiu após proposta.
+
+IMPORTANTE: Se você vir mensagens de "Atendente" na conversa, NUNCA classifique como "Novo Lead".
 
 Se houver documentos PDF na conversa (orçamentos, propostas, etc.), analise o conteúdo e extraia o valor total do negócio.
 
 Responda SOMENTE com um JSON no formato:
 {
   "stage": "<nome exato da etapa>",
-  "summary": "<resumo de 1-2 frases sobre o lead e situação atual>",
+  "summary": "<resumo de 2-3 frases descrevendo o cliente, o que ele quer e qual é a situação atual do negócio>",
   "confidence": <número de 0 a 1>,
   "deal_value": <valor numérico em reais se encontrado em documentos, ou null>
 }`;

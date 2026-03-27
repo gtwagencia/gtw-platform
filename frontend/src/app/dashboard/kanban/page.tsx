@@ -9,7 +9,7 @@ import api from '@/lib/api';
 import type { KanbanStage, Deal } from '@/types';
 import {
   GripVertical, MessageSquare, Clock, User, Brain,
-  RefreshCw, AlertCircle, ChevronRight,
+  RefreshCw, AlertCircle, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatDistanceToNow } from 'date-fns';
@@ -57,6 +57,7 @@ interface DealCardProps {
 
 function DealCard({ deal, dragHandleProps, isDragging, onAnalyze, analyzing, workspaceId }: DealCardProps) {
   const router = useRouter();
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   const hasUnread   = (deal.unread_count ?? 0) > 0;
   // "Aguardando" só aparece quando o cliente enviou e ainda não foi respondido
@@ -133,9 +134,21 @@ function DealCard({ deal, dragHandleProps, isDragging, onAnalyze, analyzing, wor
 
           {/* AI summary */}
           {deal.ai_summary && (
-            <p className="mt-1.5 text-xs text-gray-500 leading-relaxed line-clamp-2">
-              {deal.ai_summary}
-            </p>
+            <div className="mt-1.5">
+              <p className={clsx(
+                'text-xs text-gray-500 leading-relaxed',
+                !summaryExpanded && 'line-clamp-2'
+              )}>
+                {deal.ai_summary}
+              </p>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSummaryExpanded(!summaryExpanded); }}
+                className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-gray-600 mt-0.5"
+              >
+                <ChevronDown className={clsx('w-3 h-3 transition-transform', summaryExpanded && 'rotate-180')} />
+                {summaryExpanded ? 'Ver menos' : 'Ver mais'}
+              </button>
+            </div>
           )}
         </div>
       </div>
