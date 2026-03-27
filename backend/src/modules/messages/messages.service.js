@@ -26,13 +26,17 @@ async function list(conversationId, { page = 1, limit = 50 } = {}) {
   );
   const total = parseInt(countRes.rows[0].count, 10);
 
+  // Retorna as mensagens mais recentes e reordena em ordem cronológica para exibição
   const r = await query(
-    `SELECT m.*, u.name AS sender_name, u.avatar_url AS sender_avatar
-     FROM messages m
-     LEFT JOIN users u ON u.id = m.sender_id
-     WHERE m.conversation_id = $1
-     ORDER BY m.created_at ASC
-     LIMIT $2 OFFSET $3`,
+    `SELECT * FROM (
+       SELECT m.*, u.name AS sender_name, u.avatar_url AS sender_avatar
+       FROM messages m
+       LEFT JOIN users u ON u.id = m.sender_id
+       WHERE m.conversation_id = $1
+       ORDER BY m.created_at DESC
+       LIMIT $2 OFFSET $3
+     ) sub
+     ORDER BY created_at ASC`,
     [conversationId, limit, offset]
   );
 
