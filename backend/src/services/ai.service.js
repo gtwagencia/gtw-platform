@@ -195,7 +195,7 @@ async function generateChatbotResponse(conversationId, systemPrompt, apiKey, pro
 
 async function analyzeDeal(dealId, workspaceId) {
   const r = await query(
-    `SELECT d.id, d.conversation_id,
+    `SELECT d.id, d.conversation_id, d.contact_id,
             w.anthropic_api_key, w.openai_api_key, w.ai_provider, w.ai_model, w.ai_analysis_enabled
      FROM deals d
      JOIN workspaces w ON w.id = d.workspace_id
@@ -204,10 +204,28 @@ async function analyzeDeal(dealId, workspaceId) {
   );
   if (!r.rows.length) return null;
 
-  const { conversation_id, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled } = r.rows[0];
+  let { conversation_id, contact_id, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled } = r.rows[0];
   const provider = ai_provider || 'anthropic';
   const apiKey   = provider === 'openai' ? openai_api_key : anthropic_api_key;
-  if (!ai_analysis_enabled || !apiKey || !conversation_id) return null;
+  if (!ai_analysis_enabled || !apiKey) return null;
+
+  // Fallback: se deal não tem conversation_id (deals antigos), busca a conversa mais recente do contato
+  if (!conversation_id && contact_id) {
+    const convRes = await query(
+      `SELECT id FROM conversations
+       WHERE workspace_id = $1 AND contact_id = $2
+       ORDER BY last_message_at DESC NULLS LAST
+       LIMIT 1`,
+      [workspaceId, contact_id]
+    );
+    if (convRes.rows.length) {
+      conversation_id = convRes.rows[0].id;
+      // Link permanentemente para não precisar buscar toda vez
+      await query('UPDATE deals SET conversation_id = $1 WHERE id = $2', [conversation_id, dealId]);
+    }
+  }
+
+  if (!conversation_id) return null;
 
   const result = await analyzeConversation(conversation_id, apiKey, provider, ai_model || null);
   if (!result) return null;
