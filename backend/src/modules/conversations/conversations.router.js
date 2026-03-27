@@ -22,7 +22,8 @@ router.get('/', authenticate, workspaceContext, async (req, res, next) => {
     const result = await svc.list(
       req.params.workspaceId,
       { status, inboxId, assigneeId, departmentId, contactId, labelId,
-        page: parseInt(page, 10) || 1, limit: parseInt(limit, 10) || 30 },
+        page: parseInt(page, 10) || 1,
+        limit: Math.min(parseInt(limit, 10) || 30, 100) },
       getCaller(req)
     );
     res.json(result);

@@ -64,7 +64,7 @@ app.use(express.json({ limit: '10mb' }));
 // ── Rate limiting ──────────────────────────────────────────────────────────
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 500 }));
 const authLimiter    = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
-const webhookLimiter = rateLimit({ windowMs:  1 * 60 * 1000, max: 120 }); // 2 req/s por IP
+const webhookLimiter = rateLimit({ windowMs:  1 * 60 * 1000, max: 30  }); // 0.5 req/s por IP
 const uploadLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, max: 60  }); // 4 uploads/min
 const csatLimiter    = rateLimit({ windowMs: 60 * 60 * 1000, max: 10  }); // 10 por hora
 app.use('/api/v1/auth/login',             authLimiter);
@@ -192,6 +192,16 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 4000;
 
 async function start() {
+  // Validate critical environment variables before starting
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    logger.error('FATAL: JWT_SECRET must be set and at least 32 characters long');
+    process.exit(1);
+  }
+  if (!process.env.FRONTEND_URL && process.env.NODE_ENV === 'production') {
+    logger.error('FATAL: FRONTEND_URL must be set in production');
+    process.exit(1);
+  }
+
   await initDatabase();
   await ensureBucket();
   server.listen(PORT, () => {

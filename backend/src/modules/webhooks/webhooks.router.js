@@ -6,6 +6,7 @@
  */
 
 const { Router }     = require('express');
+const crypto         = require('crypto');
 const axios          = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const { query }      = require('../../config/database');
@@ -167,19 +168,35 @@ async function autoAssignAgent(workspaceId, departmentId) {
 // ── Main webhook endpoint ──────────────────────────────────────────────────
 
 router.post('/evolution/:inboxId', async (req, res) => {
-  res.json({ ok: true });
-
   const { inboxId } = req.params;
   const event = req.body;
 
   try {
     const inboxRes = await query('SELECT * FROM inboxes WHERE id = $1', [inboxId]);
-    if (!inboxRes.rows.length) return;
+    if (!inboxRes.rows.length) return res.status(404).json({ ok: false });
     const inbox = inboxRes.rows[0];
 
-    // Segurança via inboxId UUID na URL (impossível de adivinhar).
-    // A Evolution API 2.3.7 não suporta headers customizados facilmente,
-    // então não validamos a apikey aqui.
+    // Validação HMAC: se o inbox tiver webhook_secret configurado,
+    // verifica a assinatura HMAC-SHA256 do payload.
+    if (inbox.webhook_secret) {
+      const signature = req.headers['x-hub-signature-256'] || req.headers['x-webhook-hmac'];
+      if (!signature) {
+        logger.warn('Webhook rejeitado: secret configurado mas assinatura ausente', { inboxId });
+        return res.status(401).json({ error: 'Assinatura obrigatória' });
+      }
+      const rawBody   = JSON.stringify(req.body);
+      const expected  = 'sha256=' + crypto.createHmac('sha256', inbox.webhook_secret).update(rawBody).digest('hex');
+      const sigBuf    = Buffer.from(signature);
+      const expBuf    = Buffer.from(expected);
+      const valid     = sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+      if (!valid) {
+        logger.warn('Webhook rejeitado: assinatura HMAC inválida', { inboxId });
+        return res.status(401).json({ error: 'Assinatura inválida' });
+      }
+    }
+
+    res.json({ ok: true });
+
     const io    = req.app.get('io');
 
     const eventType = event.event || event.type;

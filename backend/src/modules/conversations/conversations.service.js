@@ -78,7 +78,6 @@ async function getById(conversationId, workspaceId, caller = {}) {
     `SELECT c.*,
             ct.name AS contact_name, ct.phone AS contact_phone, ct.avatar_url AS contact_avatar,
             i.name AS inbox_name, i.channel_type AS inbox_channel,
-            i.evolution_api_url, i.evolution_api_key, i.evolution_instance,
             u.name AS assignee_name, u.avatar_url AS assignee_avatar,
             d.name AS department_name, d.color AS department_color,
             COALESCE(

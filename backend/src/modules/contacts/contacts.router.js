@@ -11,9 +11,9 @@ router.get('/', authenticate, workspaceContext, async (req, res, next) => {
   try {
     const { search, page, limit } = req.query;
     const result = await svc.list(req.params.workspaceId, {
-      search,
-      page:  parseInt(page,  10) || 1,
-      limit: parseInt(limit, 10) || 50,
+      search: search?.slice(0, 200),
+      page:   parseInt(page,  10) || 1,
+      limit:  Math.min(parseInt(limit, 10) || 50, 200),
     });
     res.json(result);
   } catch (err) { next(err); }
