@@ -47,16 +47,14 @@ async function callLLM({ provider, apiKey, model, system, messages, maxTokens = 
 
 async function getConversationMessages(conversationId, includePrivate = false) {
   const r = await query(
-    `SELECT direction, content, sender_name, created_at, is_private, message_type, extracted_text
-     FROM messages
-     WHERE conversation_id = $1
-       ${includePrivate ? '' : "AND is_private = false"}
-       AND (
-         (content IS NOT NULL AND content != '')
-         OR extracted_text IS NOT NULL
-         OR message_type NOT IN ('text')
-       )
-     ORDER BY created_at DESC
+    `SELECT m.direction, m.content, m.created_at, m.is_private, m.message_type,
+            u.name AS sender_name
+     FROM messages m
+     LEFT JOIN users u ON u.id = m.sender_id
+     WHERE m.conversation_id = $1
+       ${includePrivate ? '' : "AND m.is_private = false"}
+       AND (m.content IS NOT NULL AND m.content != '' OR m.message_type != 'text')
+     ORDER BY m.created_at DESC
      LIMIT 30`,
     [conversationId]
   );
