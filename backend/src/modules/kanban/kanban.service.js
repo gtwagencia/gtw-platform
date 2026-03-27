@@ -258,8 +258,15 @@ async function moveToAttending(conversationId) {
 
   if (r.rows.length) {
     const aiSvc = require('../../services/ai.service');
-    for (const row of r.rows) {
-      aiSvc.analyzeDeal(row.deal_id, row.workspace_id).catch(() => {});
+    // Só analisa se o cliente já enviou ao menos uma mensagem
+    const hasInbound = await query(
+      `SELECT 1 FROM messages WHERE conversation_id = $1 AND direction = 'inbound' AND is_private = false LIMIT 1`,
+      [conversationId]
+    );
+    if (hasInbound.rows.length) {
+      for (const row of r.rows) {
+        aiSvc.analyzeDeal(row.deal_id, row.workspace_id).catch(() => {});
+      }
     }
   }
 }

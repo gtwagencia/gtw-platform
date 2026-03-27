@@ -160,6 +160,12 @@ async function runAiAnalysis() {
      WHERE w.ai_analysis_enabled = true
        AND (w.anthropic_api_key IS NOT NULL OR w.openai_api_key IS NOT NULL)
        AND d.conversation_id IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM messages m
+         WHERE m.conversation_id = d.conversation_id
+           AND m.direction = 'inbound'
+           AND m.is_private = false
+       )
        AND (d.ai_analyzed_at IS NULL OR d.ai_analyzed_at < NOW() - interval '30 minutes')
      ORDER BY d.updated_at DESC
      LIMIT 20`
