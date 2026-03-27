@@ -81,7 +81,7 @@ function formatTranscript(messages) {
   }).join('\n');
 }
 
-async function analyzeConversation(conversationId, apiKey, provider = 'anthropic', model = null) {
+async function analyzeConversation(conversationId, apiKey, provider = 'anthropic', model = null, stageContext = null) {
   let messages;
   try {
     messages = await getConversationMessages(conversationId);
@@ -94,7 +94,8 @@ async function analyzeConversation(conversationId, apiKey, provider = 'anthropic
   }
 
   const transcript   = formatTranscript(messages);
-  const systemPrompt = `Você é um assistente de CRM que analisa conversas de WhatsApp entre atendentes e clientes.
+  const contextBlock = stageContext ? `\nCONTEXTO ADICIONAL DO FUNIL/ETAPA:\n${stageContext}\n` : '';
+  const systemPrompt = `${contextBlock}Você é um assistente de CRM que analisa conversas de WhatsApp entre atendentes e clientes.
 Sua tarefa é classificar o lead e extrair informações comerciais relevantes.
 
 REGRA FUNDAMENTAL para classificação — leia com atenção:
@@ -197,10 +198,12 @@ async function generateChatbotResponse(conversationId, systemPrompt, apiKey, pro
 
 async function analyzeDeal(dealId, workspaceId) {
   const r = await query(
-    `SELECT d.id, d.conversation_id, d.contact_id,
+    `SELECT d.id, d.conversation_id, d.contact_id, d.pipeline_id,
+            ks.ai_prompt AS stage_ai_prompt,
             w.anthropic_api_key, w.openai_api_key, w.ai_provider, w.ai_model, w.ai_analysis_enabled
      FROM deals d
      JOIN workspaces w ON w.id = d.workspace_id
+     LEFT JOIN kanban_stages ks ON ks.id = d.stage_id
      WHERE d.id = $1 AND d.workspace_id = $2`,
     [dealId, workspaceId]
   );
@@ -209,7 +212,7 @@ async function analyzeDeal(dealId, workspaceId) {
     return null;
   }
 
-  let { conversation_id, contact_id, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled } = r.rows[0];
+  let { conversation_id, contact_id, pipeline_id, stage_ai_prompt, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled } = r.rows[0];
   const provider = ai_provider || 'anthropic';
   const apiKey   = provider === 'openai' ? openai_api_key : anthropic_api_key;
 
@@ -251,29 +254,32 @@ async function analyzeDeal(dealId, workspaceId) {
     return null;
   }
 
-  const result = await analyzeConversation(conversation_id, apiKey, provider, ai_model || null);
+  const result = await analyzeConversation(conversation_id, apiKey, provider, ai_model || null, stage_ai_prompt || null);
   if (!result) throw Object.assign(new Error('IA não retornou classificação (resposta inválida)'), { status: 400 });
 
-  const stageNameMap = {
-    'Novo Lead': 'Novo Lead', 'Em Atendimento': 'Em Atendimento',
-    'Qualificado para Venda': 'Qualificado para Venda',
-    'Comprou': 'Comprou', 'Negócio Perdido': 'Negócio Perdido',
-  };
+  // Dynamic stage name lookup from the deal's pipeline
+  let stageId = null;
+  if (result.stage && pipeline_id) {
+    const stageRes = await query(
+      `SELECT id FROM kanban_stages WHERE pipeline_id = $1 AND name = $2`,
+      [pipeline_id, result.stage]
+    );
+    if (stageRes.rows.length && result.confidence >= 0.7) stageId = stageRes.rows[0].id;
+  } else if (result.stage) {
+    // Legacy: workspace-scoped stages
+    const stageRes = await query(
+      `SELECT id FROM kanban_stages WHERE workspace_id = $1 AND name = $2`,
+      [workspaceId, result.stage]
+    );
+    if (stageRes.rows.length && result.confidence >= 0.7) stageId = stageRes.rows[0].id;
+  }
 
-  const stageName = stageNameMap[result.stage];
-  const updates   = {
+  const updates = {
     ai_qualification: result.stage,
     ai_summary:       result.summary,
     ai_analyzed_at:   new Date(),
   };
-
-  if (stageName && result.confidence >= 0.7) {
-    const stageRes = await query(
-      'SELECT id FROM kanban_stages WHERE workspace_id = $1 AND name = $2',
-      [workspaceId, stageName]
-    );
-    if (stageRes.rows.length) updates.stage_id = stageRes.rows[0].id;
-  }
+  if (stageId) updates.stage_id = stageId;
 
   // Atualiza valor do deal se IA extraiu de documentos e o campo ainda está zerado
   if (result.deal_value && typeof result.deal_value === 'number' && result.deal_value > 0) {

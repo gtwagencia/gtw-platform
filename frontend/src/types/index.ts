@@ -169,13 +169,41 @@ export interface CannedResponse {
 export interface KanbanStage {
   id: string;
   workspace_id: string;
+  pipeline_id: string | null;
   name: string;
   color: string;
   position: number;
   is_default: boolean;
+  ai_prompt: string | null;
   deal_count: number;
   total_value: number;
   deals: Deal[];
+}
+
+export interface PipelineStage {
+  id: string;
+  pipeline_id: string;
+  workspace_id: string;
+  name: string;
+  color: string;
+  position: number;
+  is_default: boolean;
+  ai_prompt: string | null;
+  deal_count: number;
+  total_value: number;
+}
+
+export interface Pipeline {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  position: number;
+  created_at: string;
+  stages: PipelineStage[];
+  inbox_ids: string[];
+  department_ids: string[];
 }
 
 export interface Deal {
@@ -183,6 +211,7 @@ export interface Deal {
   workspace_id: string;
   contact_id: string;
   stage_id: string;
+  pipeline_id: string | null;
   assignee_id: string | null;
   conversation_id: string | null;
   title: string;
@@ -206,6 +235,7 @@ export interface Deal {
   stage_color: string;
   // From conversation join
   conv_status: string | null;
+  conv_inbox_id: string | null;
   response_time_seconds: number | null;
   last_inbound_at: string | null;
   unread_count: number | null;

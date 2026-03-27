@@ -6,10 +6,11 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/store/auth';
 import Header from '@/components/layout/Header';
 import api from '@/lib/api';
-import type { KanbanStage, Deal } from '@/types';
+import type { KanbanStage, Deal, Pipeline, Inbox } from '@/types';
 import {
   GripVertical, MessageSquare, Clock, User, Brain,
   RefreshCw, AlertCircle, ChevronRight, ChevronDown,
+  Settings, Filter,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatDistanceToNow } from 'date-fns';
@@ -60,7 +61,6 @@ function DealCard({ deal, dragHandleProps, isDragging, onAnalyze, analyzing, wor
   const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   const hasUnread   = (deal.unread_count ?? 0) > 0;
-  // "Aguardando" só aparece quando o cliente enviou e ainda não foi respondido
   const isWaiting   = hasUnread && deal.last_inbound_at && !deal.conv_status?.includes('resolved');
   const waitingTime = deal.last_inbound_at
     ? formatDistanceToNow(new Date(deal.last_inbound_at), { locale: ptBR, addSuffix: false })
@@ -213,20 +213,169 @@ function DealCard({ deal, dragHandleProps, isDragging, onAnalyze, analyzing, wor
   );
 }
 
+// ── Filter bar ───────────────────────────────────────────────────────────────
+
+interface Member {
+  user_id: string;
+  name: string;
+  avatar_url: string | null;
+}
+
+interface FilterBarProps {
+  pipelines: Pipeline[];
+  selectedPipelineId: string;
+  onSelectPipeline: (id: string) => void;
+  members: Member[];
+  filterAssigneeId: string;
+  onFilterAssignee: (id: string) => void;
+  inboxes: Inbox[];
+  filterInboxId: string;
+  onFilterInbox: (id: string) => void;
+  linkedInboxIds: string[];
+}
+
+function FilterBar({
+  pipelines, selectedPipelineId, onSelectPipeline,
+  members, filterAssigneeId, onFilterAssignee,
+  inboxes, filterInboxId, onFilterInbox,
+  linkedInboxIds,
+}: FilterBarProps) {
+  const hasFilters = !!filterAssigneeId || !!filterInboxId;
+
+  // Show all inboxes or only linked ones
+  const availableInboxes = linkedInboxIds.length > 0
+    ? inboxes.filter(i => linkedInboxIds.includes(i.id))
+    : inboxes;
+
+  return (
+    <div className="px-6 pt-4 pb-2 bg-white border-b border-gray-100">
+      {/* Pipeline tabs */}
+      {pipelines.length > 1 && (
+        <div className="flex items-center gap-1 mb-3 flex-wrap">
+          {pipelines.map(p => (
+            <button
+              key={p.id}
+              onClick={() => onSelectPipeline(p.id)}
+              className={clsx(
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                selectedPipelineId === p.id
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              )}
+            >
+              {p.name}
+              {p.is_default && (
+                <span className="ml-1 text-xs opacity-60">(padrão)</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Attribute filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1 text-xs text-gray-500">
+          <Filter className="w-3.5 h-3.5" />
+          Filtros:
+        </div>
+
+        {/* Assignee filter */}
+        {members.length > 0 && (
+          <select
+            value={filterAssigneeId}
+            onChange={e => onFilterAssignee(e.target.value)}
+            className={clsx(
+              'text-xs rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-500',
+              filterAssigneeId ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-600'
+            )}
+          >
+            <option value="">Todos os atendentes</option>
+            {members.map(m => (
+              <option key={m.user_id} value={m.user_id}>{m.name}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Inbox filter */}
+        {availableInboxes.length > 0 && (
+          <select
+            value={filterInboxId}
+            onChange={e => onFilterInbox(e.target.value)}
+            className={clsx(
+              'text-xs rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-500',
+              filterInboxId ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-600'
+            )}
+          >
+            <option value="">Todos os inboxes</option>
+            {availableInboxes.map(i => (
+              <option key={i.id} value={i.id}>{i.name}</option>
+            ))}
+          </select>
+        )}
+
+        {hasFilters && (
+          <button
+            onClick={() => { onFilterAssignee(''); onFilterInbox(''); }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline"
+          >
+            Limpar filtros
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function KanbanPage() {
+  const router = useRouter();
   const { currentWorkspace } = useAuth();
+
   const [board,      setBoard]      = useState<KanbanStage[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [analyzing,  setAnalyzing]  = useState<string | null>(null);
   const [analyzeErr, setAnalyzeErr] = useState<string | null>(null);
 
+  const [pipelines,          setPipelines]          = useState<Pipeline[]>([]);
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
+  const [inboxes,            setInboxes]            = useState<Inbox[]>([]);
+  const [members,            setMembers]            = useState<Member[]>([]);
+  const [filterAssigneeId,   setFilterAssigneeId]   = useState<string>('');
+  const [filterInboxId,      setFilterInboxId]      = useState<string>('');
+
+  // Inboxes linked to the selected pipeline
+  const linkedInboxIds = pipelines.find(p => p.id === selectedPipelineId)?.inbox_ids ?? [];
+
   const loadBoard = useCallback(async () => {
     if (!currentWorkspace) return;
-    const { data } = await api.get(`/workspaces/${currentWorkspace.id}/kanban/board`);
+    const { data } = await api.get(`/workspaces/${currentWorkspace.id}/kanban/board`, {
+      params: {
+        pipelineId:  selectedPipelineId  || undefined,
+        assigneeId:  filterAssigneeId    || undefined,
+        inboxId:     filterInboxId       || undefined,
+      },
+    });
     setBoard(data);
     setLoading(false);
+  }, [currentWorkspace, selectedPipelineId, filterAssigneeId, filterInboxId]);
+
+  // Load supporting data once
+  useEffect(() => {
+    if (!currentWorkspace) return;
+    Promise.all([
+      api.get<Pipeline[]>(`/workspaces/${currentWorkspace.id}/pipelines`),
+      api.get<Inbox[]>(`/workspaces/${currentWorkspace.id}/inboxes`),
+      api.get<Member[]>(`/workspaces/${currentWorkspace.id}/members`),
+    ]).then(([pRes, iRes, mRes]) => {
+      setPipelines(pRes.data);
+      if (pRes.data.length > 0) {
+        const def = pRes.data.find(p => p.is_default) ?? pRes.data[0];
+        setSelectedPipelineId(def.id);
+      }
+      setInboxes(iRes.data);
+      setMembers(mRes.data);
+    }).catch(() => {});
   }, [currentWorkspace]);
 
   useEffect(() => { loadBoard(); }, [loadBoard]);
@@ -286,6 +435,14 @@ export default function KanbanPage() {
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500">{totalDeals} leads</span>
             <button
+              onClick={() => router.push('/dashboard/kanban/pipelines')}
+              className="btn-secondary text-sm flex items-center gap-1.5"
+              title="Gerenciar funis"
+            >
+              <Settings className="w-4 h-4" />
+              Gerenciar Funis
+            </button>
+            <button
               onClick={loadBoard}
               className="btn-secondary text-sm"
               title="Atualizar"
@@ -295,6 +452,22 @@ export default function KanbanPage() {
           </div>
         }
       />
+
+      {/* Filter bar — only shown when there's meaningful data */}
+      {(pipelines.length > 0 || members.length > 0 || inboxes.length > 0) && (
+        <FilterBar
+          pipelines={pipelines}
+          selectedPipelineId={selectedPipelineId}
+          onSelectPipeline={(id) => { setSelectedPipelineId(id); setFilterInboxId(''); }}
+          members={members}
+          filterAssigneeId={filterAssigneeId}
+          onFilterAssignee={setFilterAssigneeId}
+          inboxes={inboxes}
+          filterInboxId={filterInboxId}
+          onFilterInbox={setFilterInboxId}
+          linkedInboxIds={linkedInboxIds}
+        />
+      )}
 
       {analyzeErr && (
         <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">

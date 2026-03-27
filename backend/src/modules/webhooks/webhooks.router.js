@@ -335,6 +335,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
             contactName:    contact.name,
             conversationId: conversation.id,
             assigneeId:     conversation.assignee_id || null,
+            inboxId:        inbox.id,
           }).catch(err => logger.warn('Auto-deal creation failed', { err: err.message }));
         }
 

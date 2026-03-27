@@ -11,7 +11,8 @@ const router = Router({ mergeParams: true });
 // ── Board ──────────────────────────────────────────────────────────────────
 router.get('/board', authenticate, workspaceContext, async (req, res, next) => {
   try {
-    const board = await svc.getBoard(req.params.workspaceId);
+    const { pipelineId, assigneeId, inboxId } = req.query;
+    const board = await svc.getBoard(req.params.workspaceId, { pipelineId, assigneeId, inboxId });
     res.json(board);
   } catch (err) { next(err); }
 });

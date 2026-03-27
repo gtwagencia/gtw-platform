@@ -27,21 +27,26 @@ async function seedDefaultStages(workspaceId) {
       [workspaceId, stage.name, stage.color, stage.position]
     );
   }
+  // Link stages to default pipeline
+  await require('../pipelines/pipelines.service').seedDefaultPipeline(workspaceId);
 }
 
 // ── Stages ─────────────────────────────────────────────────────────────────
 
-async function listStages(workspaceId) {
+async function listStages(workspaceId, pipelineId) {
+  const conds = ['ks.workspace_id = $1'];
+  const params = [workspaceId];
+  if (pipelineId) { params.push(pipelineId); conds.push(`ks.pipeline_id = $${params.length}`); }
   const r = await query(
     `SELECT ks.*,
             COUNT(d.id)::int          AS deal_count,
             COALESCE(SUM(d.value), 0) AS total_value
      FROM kanban_stages ks
      LEFT JOIN deals d ON d.stage_id = ks.id
-     WHERE ks.workspace_id = $1
+     WHERE ${conds.join(' AND ')}
      GROUP BY ks.id
      ORDER BY ks.position`,
-    [workspaceId]
+    params
   );
   return r.rows;
 }
@@ -83,12 +88,14 @@ async function removeStage(stageId, workspaceId) {
 
 // ── Deals ──────────────────────────────────────────────────────────────────
 
-async function listDeals(workspaceId, { stageId, assigneeId } = {}) {
+async function listDeals(workspaceId, { stageId, assigneeId, pipelineId, inboxId } = {}) {
   const params = [workspaceId];
   const conds  = ['d.workspace_id = $1'];
 
   if (stageId)    { params.push(stageId);    conds.push(`d.stage_id = $${params.length}`); }
-  if (assigneeId) { params.push(assigneeId); conds.push(`d.assignee_id = $${params.length}`); }
+  if (assigneeId) { params.push(assigneeId); conds.push(`COALESCE(d.assignee_id, conv.assignee_id) = $${params.length}`); }
+  if (pipelineId) { params.push(pipelineId); conds.push(`d.pipeline_id = $${params.length}`); }
+  if (inboxId)    { params.push(inboxId);    conds.push(`conv.inbox_id = $${params.length}`); }
 
   const r = await query(
     `SELECT d.*,
@@ -101,6 +108,7 @@ async function listDeals(workspaceId, { stageId, assigneeId } = {}) {
             ks.color      AS stage_color,
             conv.status         AS conv_status,
             conv.assignee_id    AS conv_assignee_id,
+            conv.inbox_id       AS conv_inbox_id,
             conv.response_time_seconds,
             conv.last_inbound_at,
             conv.unread_count
@@ -108,7 +116,6 @@ async function listDeals(workspaceId, { stageId, assigneeId } = {}) {
      JOIN contacts c ON c.id = d.contact_id
      JOIN kanban_stages ks ON ks.id = d.stage_id
      LEFT JOIN conversations conv ON conv.id = d.conversation_id
-     -- usa atendente do deal; se nulo, usa atendente da conversa
      LEFT JOIN users u ON u.id = COALESCE(d.assignee_id, conv.assignee_id)
      WHERE ${conds.join(' AND ')}
      ORDER BY d.created_at DESC`,
@@ -130,19 +137,23 @@ async function createDeal(workspaceId, body) {
   return r.rows[0];
 }
 
-async function createDealFromConversation(workspaceId, { contactId, contactName, conversationId, assigneeId }) {
-  // Get the first stage (Novo Lead)
+async function createDealFromConversation(workspaceId, { contactId, contactName, conversationId, assigneeId, inboxId }) {
+  const pipelineSvc = require('../pipelines/pipelines.service');
+  const pipelineId  = inboxId
+    ? await pipelineSvc.getPipelineForInbox(inboxId, workspaceId)
+    : await pipelineSvc.getDefaultPipeline(workspaceId);
+
   const stageRes = await query(
     `SELECT id FROM kanban_stages
      WHERE workspace_id = $1 AND is_default = true
+       ${pipelineId ? 'AND pipeline_id = $2' : ''}
      ORDER BY position LIMIT 1`,
-    [workspaceId]
+    pipelineId ? [workspaceId, pipelineId] : [workspaceId]
   );
   if (!stageRes.rows.length) {
-    // Fallback: get stage with lowest position
     const fallback = await query(
-      'SELECT id FROM kanban_stages WHERE workspace_id = $1 ORDER BY position LIMIT 1',
-      [workspaceId]
+      `SELECT id FROM kanban_stages WHERE workspace_id = $1 ${pipelineId ? 'AND pipeline_id = $2' : ''} ORDER BY position LIMIT 1`,
+      pipelineId ? [workspaceId, pipelineId] : [workspaceId]
     );
     if (!fallback.rows.length) return null;
     stageRes.rows.push(fallback.rows[0]);
@@ -158,9 +169,9 @@ async function createDealFromConversation(workspaceId, { contactId, contactName,
   if (existing.rows.length) return existing.rows[0];
 
   const r = await query(
-    `INSERT INTO deals (workspace_id, contact_id, stage_id, title, conversation_id, assignee_id)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [workspaceId, contactId, stageId, contactName || 'Novo Lead', conversationId, assigneeId || null]
+    `INSERT INTO deals (workspace_id, contact_id, stage_id, pipeline_id, title, conversation_id, assignee_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [workspaceId, contactId, stageId, pipelineId || null, contactName || 'Novo Lead', conversationId, assigneeId || null]
   );
   return r.rows[0];
 }
@@ -202,9 +213,12 @@ async function removeDeal(dealId, workspaceId) {
 }
 
 // Board view — stages + their deals
-async function getBoard(workspaceId) {
-  const stages = await listStages(workspaceId);
-  const deals  = await listDeals(workspaceId);
+async function getBoard(workspaceId, { pipelineId, assigneeId, inboxId } = {}) {
+  const pipelineSvc = require('../pipelines/pipelines.service');
+  const resolvedPipelineId = pipelineId || await pipelineSvc.getDefaultPipeline(workspaceId);
+
+  const stages = await listStages(workspaceId, resolvedPipelineId);
+  const deals  = await listDeals(workspaceId, { pipelineId: resolvedPipelineId, assigneeId, inboxId });
 
   return stages.map(stage => ({
     ...stage,
@@ -220,19 +234,22 @@ async function getBoard(workspaceId) {
 async function moveToAttending(conversationId) {
   const r = await query(
     `UPDATE deals
-     SET stage_id = sub.em_atendimento_id,
-         updated_at = NOW()
+     SET stage_id = sub.em_atendimento_id, updated_at = NOW()
      FROM (
-       SELECT d.id                AS deal_id,
-              d.workspace_id,
-              atend.id            AS em_atendimento_id
+       SELECT d.id AS deal_id, d.workspace_id,
+              atend.id AS em_atendimento_id
        FROM deals d
-       JOIN kanban_stages novo  ON novo.workspace_id  = d.workspace_id
-                               AND novo.name          = 'Novo Lead'
-       JOIN kanban_stages atend ON atend.workspace_id = d.workspace_id
-                               AND atend.name         = 'Em Atendimento'
-       WHERE d.conversation_id = $1
-         AND d.stage_id = novo.id
+       JOIN kanban_stages novo  ON novo.id = (
+         SELECT id FROM kanban_stages
+         WHERE (pipeline_id = d.pipeline_id OR (pipeline_id IS NULL AND workspace_id = d.workspace_id))
+           AND name = 'Novo Lead' ORDER BY position LIMIT 1
+       )
+       JOIN kanban_stages atend ON atend.id = (
+         SELECT id FROM kanban_stages
+         WHERE (pipeline_id = d.pipeline_id OR (pipeline_id IS NULL AND workspace_id = d.workspace_id))
+           AND name = 'Em Atendimento' ORDER BY position LIMIT 1
+       )
+       WHERE d.conversation_id = $1 AND d.stage_id = novo.id
      ) sub
      WHERE deals.id = sub.deal_id
      RETURNING deals.id AS deal_id, deals.workspace_id`,
@@ -240,11 +257,9 @@ async function moveToAttending(conversationId) {
   );
 
   if (r.rows.length) {
-    // Dispara análise de IA assíncrona (qualifica o lead em seguida)
     const aiSvc = require('../../services/ai.service');
     for (const row of r.rows) {
-      aiSvc.analyzeDeal(row.deal_id, row.workspace_id)
-        .catch(() => {});
+      aiSvc.analyzeDeal(row.deal_id, row.workspace_id).catch(() => {});
     }
   }
 }
