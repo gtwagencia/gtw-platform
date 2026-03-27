@@ -202,12 +202,31 @@ async function analyzeDeal(dealId, workspaceId) {
      WHERE d.id = $1 AND d.workspace_id = $2`,
     [dealId, workspaceId]
   );
-  if (!r.rows.length) return null;
+  if (!r.rows.length) {
+    logger.warn('analyzeDeal: deal not found', { dealId, workspaceId });
+    return null;
+  }
 
   let { conversation_id, contact_id, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled } = r.rows[0];
   const provider = ai_provider || 'anthropic';
   const apiKey   = provider === 'openai' ? openai_api_key : anthropic_api_key;
-  if (!ai_analysis_enabled || !apiKey) return null;
+
+  logger.info('analyzeDeal: config check', {
+    dealId, workspaceId, provider,
+    ai_analysis_enabled,
+    hasApiKey: !!apiKey,
+    conversation_id,
+    contact_id,
+  });
+
+  if (!ai_analysis_enabled) {
+    logger.warn('analyzeDeal: ai_analysis_enabled is false');
+    return null;
+  }
+  if (!apiKey) {
+    logger.warn('analyzeDeal: no api key configured for provider', { provider });
+    return null;
+  }
 
   // Fallback: se deal não tem conversation_id (deals antigos), busca a conversa mais recente do contato
   if (!conversation_id && contact_id) {
@@ -220,12 +239,15 @@ async function analyzeDeal(dealId, workspaceId) {
     );
     if (convRes.rows.length) {
       conversation_id = convRes.rows[0].id;
-      // Link permanentemente para não precisar buscar toda vez
+      logger.info('analyzeDeal: linked conversation via contact fallback', { dealId, conversation_id });
       await query('UPDATE deals SET conversation_id = $1 WHERE id = $2', [conversation_id, dealId]);
     }
   }
 
-  if (!conversation_id) return null;
+  if (!conversation_id) {
+    logger.warn('analyzeDeal: no conversation found for deal', { dealId, contact_id });
+    return null;
+  }
 
   const result = await analyzeConversation(conversation_id, apiKey, provider, ai_model || null);
   if (!result) return null;
