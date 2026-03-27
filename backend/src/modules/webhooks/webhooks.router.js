@@ -254,6 +254,20 @@ router.post('/evolution/:inboxId', async (req, res) => {
 
           await convSvc.refreshLastMessage(conversation.id, 'outbound');
 
+          // Registra tempo de 1ª resposta (igual ao painel, mas para respostas pelo celular)
+          await query(
+            `UPDATE conversations
+             SET first_response_at = COALESCE(first_response_at, NOW()),
+                 response_time_seconds = CASE
+                   WHEN first_response_at IS NULL AND last_inbound_at IS NOT NULL
+                   THEN EXTRACT(EPOCH FROM (NOW() - last_inbound_at))::int
+                   ELSE response_time_seconds
+                 END,
+                 bot_active = false
+             WHERE id = $1`,
+            [conversation.id]
+          );
+
           // Move deal Novo Lead → Em Atendimento quando responde pelo celular
           const kanbanSvc = require('../kanban/kanban.service');
           kanbanSvc.moveToAttending(conversation.id).catch(() => {});

@@ -108,9 +108,9 @@ function DealCard({ deal, dragHandleProps, isDragging, onAnalyze, analyzing, wor
             </div>
           )}
 
-          {/* AI qualification badge */}
-          {deal.ai_qualification && (
-            <div className="mt-2">
+          {/* AI status */}
+          <div className="mt-2">
+            {deal.ai_qualification ? (
               <span className={clsx(
                 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
                 aiQualificationColor(deal.ai_qualification)
@@ -118,8 +118,18 @@ function DealCard({ deal, dragHandleProps, isDragging, onAnalyze, analyzing, wor
                 <Brain className="w-2.5 h-2.5" />
                 {deal.ai_qualification}
               </span>
-            </div>
-          )}
+            ) : deal.ai_analyzed_at ? (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-400">
+                <Brain className="w-2.5 h-2.5" />
+                IA sem classificação
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-gray-50 text-gray-300">
+                <Brain className="w-2.5 h-2.5" />
+                IA pendente
+              </span>
+            )}
+          </div>
 
           {/* AI summary */}
           {deal.ai_summary && (
