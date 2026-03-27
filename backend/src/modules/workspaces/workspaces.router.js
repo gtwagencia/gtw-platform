@@ -9,6 +9,17 @@ const svc = require('./workspaces.service');
 // mergeParams so :orgId from parent router is available
 const router = Router({ mergeParams: true });
 
+/** Strip raw API keys and replace with boolean flags for safe frontend consumption. */
+function sanitizeWorkspace(ws) {
+  if (!ws) return ws;
+  const { anthropic_api_key, openai_api_key, ...rest } = ws;
+  return {
+    ...rest,
+    has_anthropic_key: !!anthropic_api_key,
+    has_openai_key:    !!openai_api_key,
+  };
+}
+
 // GET /orgs/:orgId/workspaces
 router.get('/', authenticate, orgContext, async (req, res, next) => {
   try {
@@ -18,7 +29,7 @@ router.get('/', authenticate, orgContext, async (req, res, next) => {
       req.user.isSuperAdmin,
       req.orgRole
     );
-    res.json(list);
+    res.json(list.map(sanitizeWorkspace));
   } catch (err) { next(err); }
 });
 
@@ -35,7 +46,7 @@ router.post('/', authenticate, orgContext, requireOrgRole('owner', 'admin'), asy
 // GET /orgs/:orgId/workspaces/:workspaceId
 router.get('/:workspaceId', authenticate, orgContext, workspaceContext, async (req, res, next) => {
   try {
-    res.json(req.workspace);
+    res.json(sanitizeWorkspace(req.workspace));
   } catch (err) { next(err); }
 });
 
@@ -46,7 +57,7 @@ router.put('/:workspaceId', authenticate, orgContext, workspaceContext, async (r
       return res.status(403).json({ error: 'Acesso negado' });
     }
     const ws = await svc.update(req.params.workspaceId, req.body);
-    res.json(ws);
+    res.json(sanitizeWorkspace(ws));
   } catch (err) { next(err); }
 });
 

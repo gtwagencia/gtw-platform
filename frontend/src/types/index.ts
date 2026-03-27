@@ -60,6 +60,8 @@ export interface Workspace {
   ai_analysis_enabled: boolean;
   ai_provider: string | null;
   ai_model: string | null;
+  has_anthropic_key: boolean;
+  has_openai_key: boolean;
   sla_response_minutes: number | null;
   created_at: string;
   member_count?: number;

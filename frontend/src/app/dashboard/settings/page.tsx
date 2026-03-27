@@ -5,7 +5,7 @@ import { useAuth } from '@/store/auth';
 import Header from '@/components/layout/Header';
 import api from '@/lib/api';
 import type { BusinessHours, BusinessHoursDay } from '@/types';
-import { Save, Eye, EyeOff, Brain, Clock, MessageSquare } from 'lucide-react';
+import { Save, Eye, EyeOff, Brain, Clock, MessageSquare, CheckCircle } from 'lucide-react';
 import clsx from 'clsx';
 
 // ── Default business hours ───────────────────────────────────────────────────
@@ -302,12 +302,18 @@ export default function SettingsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Chave API Anthropic (Claude)
                 </label>
+                {currentWorkspace.has_anthropic_key && !form.anthropicApiKey && (
+                  <div className="flex items-center gap-1.5 text-xs text-green-600 mb-1">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Chave salva — deixe em branco para manter
+                  </div>
+                )}
                 <input
                   className="input font-mono text-xs"
                   type={showTokens ? 'text' : 'password'}
                   value={form.anthropicApiKey}
                   onChange={(e) => setForm({ ...form, anthropicApiKey: e.target.value })}
-                  placeholder="sk-ant-... (deixe em branco para manter o atual)"
+                  placeholder={currentWorkspace.has_anthropic_key ? '••••••••••••• (manter atual)' : 'sk-ant-... (cole aqui para configurar)'}
                 />
               </div>
 
@@ -316,12 +322,18 @@ export default function SettingsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Chave API OpenAI (ChatGPT)
                 </label>
+                {currentWorkspace.has_openai_key && !form.openaiApiKey && (
+                  <div className="flex items-center gap-1.5 text-xs text-green-600 mb-1">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Chave salva — deixe em branco para manter
+                  </div>
+                )}
                 <input
                   className="input font-mono text-xs"
                   type={showTokens ? 'text' : 'password'}
                   value={form.openaiApiKey}
                   onChange={(e) => setForm({ ...form, openaiApiKey: e.target.value })}
-                  placeholder="sk-... (deixe em branco para manter o atual)"
+                  placeholder={currentWorkspace.has_openai_key ? '••••••••••••• (manter atual)' : 'sk-... (cole aqui para configurar)'}
                 />
                 <p className="text-xs text-gray-400 mt-1">
                   Configure o provedor ativo acima. Pode ter ambas as chaves salvas.

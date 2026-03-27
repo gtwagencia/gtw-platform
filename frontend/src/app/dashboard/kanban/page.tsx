@@ -207,6 +207,7 @@ export default function KanbanPage() {
   const [board,      setBoard]      = useState<KanbanStage[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [analyzing,  setAnalyzing]  = useState<string | null>(null);
+  const [analyzeErr, setAnalyzeErr] = useState<string | null>(null);
 
   const loadBoard = useCallback(async () => {
     if (!currentWorkspace) return;
@@ -238,11 +239,14 @@ export default function KanbanPage() {
   async function handleAnalyze(dealId: string) {
     if (!currentWorkspace || analyzing) return;
     setAnalyzing(dealId);
+    setAnalyzeErr(null);
     try {
       await api.post(`/workspaces/${currentWorkspace.id}/kanban/deals/${dealId}/analyze`);
-      await loadBoard(); // Refresh to get updated AI fields
-    } catch {
-      // Silently fail — AI might not be configured
+      await loadBoard();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Erro ao analisar';
+      setAnalyzeErr(msg);
+      setTimeout(() => setAnalyzeErr(null), 5000);
     } finally {
       setAnalyzing(null);
     }
@@ -278,6 +282,13 @@ export default function KanbanPage() {
           </div>
         }
       />
+
+      {analyzeErr && (
+        <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {analyzeErr}
+        </div>
+      )}
 
       <div className="flex-1 overflow-x-auto p-6 bg-gray-50">
         {loading ? (
