@@ -201,7 +201,7 @@ async function analyzeDeal(dealId, workspaceId) {
     `SELECT d.id, d.conversation_id, d.contact_id, d.pipeline_id, d.ai_analyzed_at,
             ks.ai_prompt AS stage_ai_prompt,
             w.anthropic_api_key, w.openai_api_key, w.ai_provider, w.ai_model, w.ai_analysis_enabled,
-            c.last_message_at
+            c.last_message_at, c.first_response_at
      FROM deals d
      JOIN workspaces w ON w.id = d.workspace_id
      LEFT JOIN kanban_stages ks ON ks.id = d.stage_id
@@ -214,13 +214,17 @@ async function analyzeDeal(dealId, workspaceId) {
     return null;
   }
 
-  let { conversation_id, contact_id, pipeline_id, stage_ai_prompt, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled, ai_analyzed_at, last_message_at } = r.rows[0];
+  let { conversation_id, contact_id, pipeline_id, stage_ai_prompt, anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_analysis_enabled, ai_analyzed_at, last_message_at, first_response_at } = r.rows[0];
 
-  // Se já foi analisado antes, só re-analisa se houve mensagem nos últimos 30 minutos
+  // Se já foi analisado antes, só re-analisa se:
+  // - houve mensagem nos últimos 30 minutos, OU
+  // - agente ainda não respondeu (first_response_at IS NULL) — mantém análise atualizada enquanto aguarda
   if (ai_analyzed_at && last_message_at) {
     const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
-    if (new Date(last_message_at) < thirtyMinAgo) {
-      logger.debug('analyzeDeal: skipped — last message older than 30 min', { dealId });
+    const hasRecentActivity = new Date(last_message_at) >= thirtyMinAgo;
+    const awaitingFirstResponse = !first_response_at;
+    if (!hasRecentActivity && !awaitingFirstResponse) {
+      logger.debug('analyzeDeal: skipped — no recent activity and already responded', { dealId });
       return null;
     }
   }
