@@ -176,12 +176,13 @@ router.post('/evolution/:inboxId', async (req, res) => {
     if (!inboxRes.rows.length) return res.status(404).json({ ok: false });
     const inbox = inboxRes.rows[0];
 
-    // Validação HMAC: se o inbox tiver webhook_secret configurado,
-    // verifica a assinatura HMAC-SHA256 do payload.
-    if (inbox.webhook_secret) {
+    // Validação HMAC: só valida se o inbox tiver hmac_enabled=true E a requisição
+    // trouxer o header de assinatura. A Evolution API não envia assinatura por padrão,
+    // portanto a validação é opt-in por inbox (não ativada automaticamente).
+    if (inbox.hmac_enabled && inbox.webhook_secret) {
       const signature = req.headers['x-hub-signature-256'] || req.headers['x-webhook-hmac'];
       if (!signature) {
-        logger.warn('Webhook rejeitado: secret configurado mas assinatura ausente', { inboxId });
+        logger.warn('Webhook rejeitado: HMAC obrigatório mas ausente', { inboxId });
         return res.status(401).json({ error: 'Assinatura obrigatória' });
       }
       const rawBody   = JSON.stringify(req.body);
