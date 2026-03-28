@@ -321,6 +321,13 @@ router.post('/evolution/:inboxId', async (req, res) => {
         });
 
         const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg, inbox);
+
+        // Click-to-WhatsApp attribution
+        const referral = msg.referral || msg.message?.extendedTextMessage?.contextInfo?.externalAdReply || null;
+        const metaRef      = referral?.ref || referral?.headline || null;
+        const metaCtwaClid = referral?.ctwaClid || null;
+        const metaSource   = (metaRef || metaCtwaClid) ? 'paid' : 'organic';
+
         const message = await msgSvc.insertInbound(conversation.id, {
           content, messageType, mediaUrl, mediaMimeType, evolutionMsgId: msg.key?.id,
         });
@@ -354,7 +361,23 @@ router.post('/evolution/:inboxId', async (req, res) => {
             conversationId: conversation.id,
             assigneeId:     conversation.assignee_id || null,
             inboxId:        inbox.id,
+            metaRef,
+            metaCtwaClid,
+            metaSource,
           }).catch(err => logger.warn('Auto-deal creation failed', { err: err.message }));
+
+          // Envia evento Lead para Meta CAPI se workspace tiver pixel configurado
+          const metaSvc = require('../meta/meta.service');
+          const wsRes = await query(
+            'SELECT meta_pixel_id, meta_conversions_token FROM workspaces WHERE id = $1',
+            [inbox.workspace_id]
+          );
+          const ws = wsRes.rows[0];
+          if (ws?.meta_pixel_id && ws?.meta_conversions_token) {
+            metaSvc.sendLeadEvent(ws, { contact, metaCtwaClid }).catch(err =>
+              logger.warn('Meta Lead event failed', { err: err.message })
+            );
+          }
         }
 
         // ── Chatbot response ──────────────────────────────────────────

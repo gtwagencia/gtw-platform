@@ -208,13 +208,22 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Conversions API Token</label>
+                {currentWorkspace.has_meta_conversions_token && !form.metaConversionsToken && (
+                  <div className="flex items-center gap-1.5 text-xs text-green-600 mb-1">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Chave salva — deixe em branco para manter
+                  </div>
+                )}
                 <input
                   className="input font-mono text-xs"
                   type={showTokens ? 'text' : 'password'}
                   value={form.metaConversionsToken}
                   onChange={(e) => setForm({ ...form, metaConversionsToken: e.target.value })}
-                  placeholder="Deixe em branco para manter o atual"
+                  placeholder={currentWorkspace.has_meta_conversions_token ? '••••••••••••• (manter atual)' : 'Cole o token aqui para configurar'}
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  Usado para enviar eventos Lead e Purchase à Meta Conversions API automaticamente.
+                </p>
               </div>
             </div>
           </div>

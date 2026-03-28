@@ -22,11 +22,12 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value.toLowerCase().trim()).digest('hex');
 }
 
-function buildUserData(contact) {
+function buildUserData(contact, metaCtwaClid) {
   return {
-    ph:  contact.phone  ? sha256(contact.phone.replace(/\D/g, '')) : undefined,
-    em:  contact.email  ? sha256(contact.email)                    : undefined,
-    fbc: contact.meta_lead_id ? `fb.1.${Date.now()}.${contact.meta_lead_id}` : undefined,
+    ph:  contact.phone ? sha256(contact.phone.replace(/\D/g, '')) : undefined,
+    em:  contact.email ? sha256(contact.email)                    : undefined,
+    fbc: metaCtwaClid  ? `fb.1.${Date.now()}.${metaCtwaClid}`    :
+         contact.meta_lead_id ? `fb.1.${Date.now()}.${contact.meta_lead_id}` : undefined,
     fbp: undefined,
     country: sha256('br'),
   };
@@ -41,7 +42,7 @@ function buildCustomData(deal) {
 
 // ── Send event ─────────────────────────────────────────────────────────────
 
-async function sendEvent(workspace, { eventName, contact, deal, sourceUrl }) {
+async function sendEvent(workspace, { eventName, contact, deal, sourceUrl, metaCtwaClid }) {
   if (!workspace.meta_conversions_token || !workspace.meta_pixel_id) {
     throw Object.assign(new Error('Meta Conversions API não configurada neste workspace'), { status: 400 });
   }
@@ -56,7 +57,7 @@ async function sendEvent(workspace, { eventName, contact, deal, sourceUrl }) {
       event_id:      eventId,
       action_source: 'crm',
       event_source_url: sourceUrl,
-      user_data:     buildUserData(contact),
+      user_data:     buildUserData(contact, metaCtwaClid || deal?.meta_ctwa_clid),
       custom_data:   deal ? buildCustomData(deal) : undefined,
     }],
   };
@@ -112,8 +113,8 @@ async function sendPurchaseEvent(workspace, { contact, deal }) {
   return sendEvent(workspace, { eventName: 'Purchase', contact, deal });
 }
 
-async function sendLeadEvent(workspace, { contact }) {
-  return sendEvent(workspace, { eventName: 'Lead', contact });
+async function sendLeadEvent(workspace, { contact, metaCtwaClid }) {
+  return sendEvent(workspace, { eventName: 'Lead', contact, metaCtwaClid });
 }
 
 // ── Event history ──────────────────────────────────────────────────────────
