@@ -134,15 +134,29 @@ export default function ConversationList({ workspaceId, selected, onSelect }: Pr
       });
     };
 
+    // Ao reconectar (após tab ficar em background ou desconexão), recarrega lista
+    const onReconnect = () => load(false);
+
     socket.on('message:new',          onMessage);
     socket.on('conversation:new',     onNew);
     socket.on('conversation:updated', onUpdated);
+    socket.on('connect',              onReconnect);
     return () => {
       socket.off('message:new',          onMessage);
       socket.off('conversation:new',     onNew);
       socket.off('conversation:updated', onUpdated);
+      socket.off('connect',              onReconnect);
     };
   }, [load, status, selected]);
+
+  // Quando o usuário volta para a aba (tab visibility), recarrega silenciosamente
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') load(false);
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [load]);
 
   const activeFilters = (filters.departmentId ? 1 : 0) + (filters.inboxId ? 1 : 0);
 
