@@ -160,15 +160,18 @@ async function runAiAnalysis() {
      WHERE w.ai_analysis_enabled = true
        AND (w.anthropic_api_key IS NOT NULL OR w.openai_api_key IS NOT NULL)
        AND d.conversation_id IS NOT NULL
-       AND EXISTS (
-         SELECT 1 FROM messages m
-         WHERE m.conversation_id = d.conversation_id
-           AND m.direction = 'inbound'
-           AND m.is_private = false
+       AND (
+         d.ai_analyzed_at IS NULL
+         OR EXISTS (
+           SELECT 1 FROM messages m
+           WHERE m.conversation_id = d.conversation_id
+             AND m.direction = 'inbound'
+             AND m.is_private = false
+             AND m.created_at > d.ai_analyzed_at
+         )
        )
-       AND (d.ai_analyzed_at IS NULL OR d.ai_analyzed_at < NOW() - interval '30 minutes')
      ORDER BY d.updated_at DESC
-     LIMIT 20`
+     LIMIT 30`
   );
 
   for (const deal of r.rows) {
@@ -228,8 +231,8 @@ function startJobs() {
     backfillAttending().catch(err => logger.error('Backfill attending error', { err: err.message }));
   });
 
-  // AI analysis — every 15 minutes
-  cron.schedule('*/15 * * * *', () => {
+  // AI analysis — every hour
+  cron.schedule('0 * * * *', () => {
     backfillAttending()  // garante estágio correto antes de analisar
       .then(() => runAiAnalysis())
       .catch(err => logger.error('AI analysis error', { err: err.message }));

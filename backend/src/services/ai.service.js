@@ -48,6 +48,7 @@ async function callLLM({ provider, apiKey, model, system, messages, maxTokens = 
 async function getConversationMessages(conversationId, includePrivate = false) {
   const r = await query(
     `SELECT m.direction, m.content, m.created_at, m.is_private, m.message_type,
+            m.media_url, m.media_mime_type, m.extracted_text,
             u.name AS sender_name
      FROM messages m
      LEFT JOIN users u ON u.id = m.sender_id
@@ -68,7 +69,6 @@ function formatTranscript(messages) {
       : 'Cliente';
 
     if (m.extracted_text) {
-      // Limita texto do PDF a 3000 chars por mensagem para não explodir o contexto
       const preview = m.extracted_text.slice(0, 3000);
       return `${role} [PDF enviado]:\n---\n${preview}\n---`;
     }
@@ -79,6 +79,76 @@ function formatTranscript(messages) {
     if (m.message_type === 'sticker')  return `${role}: [figurinha]`;
     return `${role}: ${m.content}`;
   }).join('\n');
+}
+
+/**
+ * Fetch a media URL and return base64 + mime type.
+ * Returns null if fetch fails (non-blocking).
+ */
+async function fetchMediaAsBase64(url) {
+  try {
+    const axios = require('axios');
+    const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000 });
+    const base64 = Buffer.from(resp.data).toString('base64');
+    const mime = resp.headers['content-type'] || 'image/jpeg';
+    return { base64, mime };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build Anthropic multimodal message content from conversation messages.
+ * Includes images and PDFs inline so Claude can analyze them.
+ */
+async function buildAnthropicContent(messages) {
+  const parts = [];
+
+  for (const m of messages) {
+    const role = m.direction === 'outbound'
+      ? `Atendente${m.sender_name ? ` (${m.sender_name})` : ''}`
+      : 'Cliente';
+
+    // Image with media_url → send inline for vision
+    if (m.message_type === 'image' && m.media_url) {
+      const media = await fetchMediaAsBase64(m.media_url);
+      if (media) {
+        parts.push({ type: 'text', text: `${role} [imagem]:` });
+        parts.push({
+          type: 'image',
+          source: { type: 'base64', media_type: media.mime, data: media.base64 },
+        });
+        continue;
+      }
+    }
+
+    // PDF/document with media_url → send as document for Claude to read
+    if (m.message_type === 'document' && m.media_url) {
+      const mime = m.media_mime_type || '';
+      if (mime.includes('pdf') || m.media_url.toLowerCase().endsWith('.pdf')) {
+        const media = await fetchMediaAsBase64(m.media_url);
+        if (media) {
+          parts.push({ type: 'text', text: `${role} [documento PDF]:` });
+          parts.push({
+            type: 'document',
+            source: { type: 'base64', media_type: 'application/pdf', data: media.base64 },
+          });
+          continue;
+        }
+      }
+      // Non-PDF document: extracted text or filename
+      if (m.extracted_text) {
+        parts.push({ type: 'text', text: `${role} [documento]:\n---\n${m.extracted_text.slice(0, 3000)}\n---` });
+        continue;
+      }
+    }
+
+    // Text or fallback
+    const text = formatTranscript([m]);
+    if (text) parts.push({ type: 'text', text });
+  }
+
+  return parts;
 }
 
 async function analyzeConversation(conversationId, apiKey, provider = 'anthropic', model = null, stageContext = null) {
@@ -96,7 +166,7 @@ async function analyzeConversation(conversationId, apiKey, provider = 'anthropic
   const transcript   = formatTranscript(messages);
   const contextBlock = stageContext ? `\nCONTEXTO ADICIONAL DO FUNIL/ETAPA:\n${stageContext}\n` : '';
   const systemPrompt = `${contextBlock}Você é um assistente de CRM que analisa conversas de WhatsApp entre atendentes e clientes.
-Sua tarefa é classificar o lead e extrair informações comerciais relevantes.
+Sua tarefa é classificar o lead, extrair informações comerciais e identificar documentos importantes como orçamentos e comprovantes de pagamento.
 
 REGRA FUNDAMENTAL para classificação — leia com atenção:
 - "Novo Lead": NÃO há NENHUMA mensagem de "Atendente" na conversa. O cliente entrou em contato mas nenhum atendente respondeu ainda.
@@ -107,20 +177,37 @@ REGRA FUNDAMENTAL para classificação — leia com atenção:
 
 IMPORTANTE: Se você vir mensagens de "Atendente" na conversa, NUNCA classifique como "Novo Lead".
 
-Se houver documentos PDF na conversa (orçamentos, propostas, etc.), analise o conteúdo e extraia o valor total do negócio.
+ANÁLISE DE IMAGENS E DOCUMENTOS:
+- Se receber imagens ou PDFs, analise o conteúdo visual/textual.
+- Orçamentos/propostas: extraia o valor total do negócio e itens principais.
+- Comprovantes de pagamento (PIX, transferência, boleto pago): se identificar um comprovante válido, classifique como "Comprou" e extraia o valor pago.
+- Ignore imagens irrelevantes (figurinhas, fotos de produtos sem valor).
 
 Responda SOMENTE com um JSON no formato:
 {
   "stage": "<nome exato da etapa>",
   "summary": "<resumo de 2-3 frases descrevendo o cliente, o que ele quer e qual é a situação atual do negócio>",
   "confidence": <número de 0 a 1>,
-  "deal_value": <valor numérico em reais se encontrado em documentos, ou null>
+  "deal_value": <valor numérico em reais se encontrado em documentos ou comprovante, ou null>,
+  "payment_detected": <true se identificou comprovante de pagamento, false caso contrário>
 }`;
 
   try {
+    let userContent;
+    if (provider === 'anthropic') {
+      // Use multimodal content: images and PDFs sent inline
+      const mediaParts = await buildAnthropicContent(messages);
+      userContent = [
+        { type: 'text', text: 'Analise esta conversa e classifique o lead:' },
+        ...mediaParts,
+      ];
+    } else {
+      userContent = `Analise esta conversa e classifique o lead:\n\n${transcript}`;
+    }
+
     const text = await callLLM({
-      provider, apiKey, model, system: systemPrompt, maxTokens: 300,
-      messages: [{ role: 'user', content: `Analise esta conversa e classifique o lead:\n\n${transcript}` }],
+      provider, apiKey, model, system: systemPrompt, maxTokens: 600,
+      messages: [{ role: 'user', content: userContent }],
     });
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
@@ -296,11 +383,20 @@ async function analyzeDeal(dealId, workspaceId) {
   };
   if (stageId) updates.stage_id = stageId;
 
-  // Atualiza valor do deal se IA extraiu de documentos e o campo ainda está zerado
+  // Atualiza valor do deal se IA extraiu de documentos/comprovante e o campo ainda está zerado
   if (result.deal_value && typeof result.deal_value === 'number' && result.deal_value > 0) {
     const dealRes = await query('SELECT value FROM deals WHERE id = $1', [dealId]);
     const currentValue = parseFloat(dealRes.rows[0]?.value || 0);
     if (currentValue === 0) updates.value = result.deal_value;
+  }
+
+  // Se IA identificou comprovante de pagamento, força estágio para "Comprou"
+  if (result.payment_detected && pipeline_id) {
+    const comprou = await query(
+      `SELECT id FROM kanban_stages WHERE pipeline_id = $1 AND name = 'Comprou' LIMIT 1`,
+      [pipeline_id]
+    );
+    if (comprou.rows.length) updates.stage_id = comprou.rows[0].id;
   }
 
   const fields = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`);
