@@ -8,7 +8,7 @@ import clsx from 'clsx';
 import {
   MessageSquare, Users, Kanban, Inbox, Settings,
   LogOut, ChevronDown, Building2, Home, User,
-  Check, Plus, ArrowLeftRight, LayoutList, BarChart2, BookMarked, Tag,
+  Check, Plus, ArrowLeftRight, LayoutList, BarChart2, BookMarked, Tag, Ticket,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Workspace } from '@/types';
@@ -18,6 +18,7 @@ const navItems = [
   { href: '/dashboard/conversations', icon: MessageSquare, label: 'Conversas' },
   { href: '/dashboard/contacts',      icon: Users,         label: 'Contatos' },
   { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil' },
+  { href: '/dashboard/tickets',       icon: Ticket,        label: 'Tickets' },
   { href: '/dashboard/inboxes',       icon: Inbox,         label: 'Inboxes' },
   { href: '/dashboard/members',       icon: Users,         label: 'Agentes' },
   { href: '/dashboard/departments',   icon: LayoutList,    label: 'Departamentos' },

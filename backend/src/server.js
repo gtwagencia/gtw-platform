@@ -33,6 +33,7 @@ const labelsRouter        = require('./modules/labels/labels.router');
 const reportsRouter       = require('./modules/reports/reports.router');
 const templatesRouter     = require('./modules/templates/templates.router');
 const uploadsRouter       = require('./modules/uploads/uploads.router');
+const ticketsRouter       = require('./modules/tickets/tickets.router');
 
 const app    = express();
 const server = http.createServer(app);
@@ -81,6 +82,7 @@ app.use('/api/v1/workspaces/:workspaceId/inboxes',         inboxesRouter);
 app.use('/api/v1/workspaces/:workspaceId/contacts',        contactsRouter);
 app.use('/api/v1/workspaces/:workspaceId/conversations',   conversationsRouter);
 app.use('/api/v1/workspaces/:workspaceId/kanban',          kanbanRouter);
+app.use('/api/v1/workspaces/:workspaceId/tickets',        ticketsRouter);
 app.use('/api/v1/workspaces/:workspaceId/pipelines',       pipelinesRouter);
 app.use('/api/v1/workspaces/:workspaceId/departments',     departmentsRouter);
 app.use('/api/v1/workspaces/:workspaceId/canned',          cannedRouter);

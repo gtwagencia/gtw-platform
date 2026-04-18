@@ -10,7 +10,7 @@ import { joinConversation, getSocket } from '@/lib/socket';
 import type { Conversation, Message, Label, CannedResponse } from '@/types';
 import {
   Send, Check, CheckCheck, AlertCircle,
-  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip,
+  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip, Ticket,
 } from 'lucide-react';
 
 interface Props {
@@ -42,6 +42,13 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   const [csatRating,    setCsatRating]    = useState(0);
   const [csatSent,      setCsatSent]      = useState(false);
   const [uploading,     setUploading]     = useState(false);
+  const [showTicket,    setShowTicket]    = useState(false);
+  const [ticketBoards,  setTicketBoards]  = useState<{ id: string; name: string; columns: { id: string; name: string }[] }[]>([]);
+  const [ticketBoardId, setTicketBoardId] = useState('');
+  const [ticketColId,   setTicketColId]   = useState('');
+  const [ticketTitle,   setTicketTitle]   = useState('');
+  const [ticketPriority,setTicketPriority]= useState('medium');
+  const [ticketSaving,  setTicketSaving]  = useState(false);
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const bottomRef       = useRef<HTMLDivElement>(null);
   const assignRef       = useRef<HTMLDivElement>(null);
@@ -222,6 +229,63 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     }
   }
 
+  async function openTicketModal() {
+    if (!currentWorkspace) return;
+    setTicketTitle(conversation.contact_name || '');
+    setTicketBoardId('');
+    setTicketColId('');
+    setTicketPriority('medium');
+    setShowTicket(true);
+    if (ticketBoards.length === 0) {
+      try {
+        const { data } = await api.get(`/workspaces/${currentWorkspace.id}/tickets/boards`);
+        // para cada board, buscar colunas
+        const withCols = await Promise.all(
+          (data as { id: string; name: string }[]).map(async (b) => {
+            const { data: detail } = await api.get(`/workspaces/${currentWorkspace.id}/tickets/boards/${b.id}`);
+            return { id: b.id, name: b.name, columns: detail.columns || [] };
+          })
+        );
+        setTicketBoards(withCols);
+        if (withCols.length > 0) {
+          setTicketBoardId(withCols[0].id);
+          if (withCols[0].columns.length > 0) setTicketColId(withCols[0].columns[0].id);
+        }
+      } catch { /* silently fail */ }
+    } else {
+      if (ticketBoards.length > 0 && !ticketBoardId) {
+        setTicketBoardId(ticketBoards[0].id);
+        if (ticketBoards[0].columns.length > 0) setTicketColId(ticketBoards[0].columns[0].id);
+      }
+    }
+  }
+
+  function handleTicketBoardChange(boardId: string) {
+    setTicketBoardId(boardId);
+    const board = ticketBoards.find(b => b.id === boardId);
+    setTicketColId(board?.columns[0]?.id || '');
+  }
+
+  async function createTicket() {
+    if (!currentWorkspace || !ticketBoardId || ticketSaving) return;
+    setTicketSaving(true);
+    try {
+      await api.post(`/workspaces/${currentWorkspace.id}/tickets/boards/${ticketBoardId}/tickets/from-conversation`, {
+        conversationId: conversation.id,
+        contactId:      conversation.contact_id,
+        contactName:    conversation.contact_name,
+        columnId:       ticketColId || undefined,
+        title:          ticketTitle || conversation.contact_name,
+        priority:       ticketPriority,
+      });
+      setShowTicket(false);
+    } catch {
+      alert('Erro ao criar ticket.');
+    } finally {
+      setTicketSaving(false);
+    }
+  }
+
   async function sendCsatRequest() {
     // Envia mensagem de pesquisa CSAT para o cliente via WhatsApp
     const csatMsg = `Olá! Seu atendimento foi encerrado. Como você avalia nosso serviço hoje?\n\nResponda com um número:\n1 ⭐ - Péssimo\n2 ⭐ - Ruim\n3 ⭐ - Regular\n4 ⭐ - Bom\n5 ⭐ - Ótimo`;
@@ -327,6 +391,15 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
             </div>
           )}
         </div>
+
+        {/* Criar Ticket */}
+        <button
+          onClick={openTicketModal}
+          className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          title="Criar ticket"
+        >
+          <Ticket className="w-4 h-4" />
+        </button>
 
         {/* CSAT */}
         <button
@@ -521,6 +594,84 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* ── Criar Ticket Modal ───────────────────────────────── */}
+      {showTicket && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowTicket(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-96" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Ticket className="w-4 h-4 text-brand-600" />
+                Criar ticket
+              </h3>
+              <button onClick={() => setShowTicket(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">Título</label>
+                <input
+                  className="input w-full"
+                  value={ticketTitle}
+                  onChange={e => setTicketTitle(e.target.value)}
+                  placeholder="Título do ticket"
+                />
+              </div>
+
+              {ticketBoards.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-3">Nenhum board disponível</p>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 mb-1 block">Board</label>
+                    <select className="input w-full" value={ticketBoardId} onChange={e => handleTicketBoardChange(e.target.value)}>
+                      {ticketBoards.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {ticketBoards.find(b => b.id === ticketBoardId)?.columns?.length ? (
+                    <div>
+                      <label className="text-xs font-medium text-gray-700 mb-1 block">Coluna</label>
+                      <select className="input w-full" value={ticketColId} onChange={e => setTicketColId(e.target.value)}>
+                        {ticketBoards.find(b => b.id === ticketBoardId)?.columns.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">Prioridade</label>
+                <select className="input w-full" value={ticketPriority} onChange={e => setTicketPriority(e.target.value)}>
+                  <option value="low">Baixa</option>
+                  <option value="medium">Média</option>
+                  <option value="high">Alta</option>
+                  <option value="urgent">Urgente</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setShowTicket(false)} className="btn-secondary flex-1 text-sm">
+                Cancelar
+              </button>
+              <button
+                onClick={createTicket}
+                disabled={ticketSaving || !ticketBoardId}
+                className="btn-primary flex-1 text-sm"
+              >
+                {ticketSaving ? 'Criando...' : 'Criar ticket'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── CSAT Modal ────────────────────────────────────────── */}
       {showCsat && (

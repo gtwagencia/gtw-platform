@@ -265,3 +265,121 @@ export interface PaginatedResponse<T> {
   page: number;
   limit: number;
 }
+
+// ── Tickets ───────────────────────────────────────────────────────────────────
+
+export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TicketBoardRole = 'viewer' | 'member' | 'manager';
+export type RecurrenceType = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly' | 'custom';
+
+export interface TicketLabel {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface Ticket {
+  id: string;
+  board_id: string;
+  column_id: string;
+  title: string;
+  description: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  assignee_avatar: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  priority: TicketPriority;
+  due_date: string | null;
+  position: number;
+  estimated_hours: number | null;
+  conversation_id: string | null;
+  contact_id: string | null;
+  contact_name: string | null;
+  is_recurring: boolean;
+  recurrence_type: RecurrenceType | null;
+  recurrence_interval: number | null;
+  recurrence_end: string | null;
+  parent_ticket_id: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  labels: TicketLabel[];
+  total_time_seconds: number;
+  // Extended (board/my-tasks view)
+  board_name?: string;
+  board_color?: string;
+  column_name?: string;
+  column_color?: string;
+  column_is_done?: boolean;
+}
+
+export interface TicketColumn {
+  id: string;
+  board_id: string;
+  name: string;
+  color: string;
+  position: number;
+  is_done: boolean;
+  tickets: Ticket[];
+}
+
+export interface TicketBoard {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  is_archived: boolean;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+  columns: TicketColumn[];
+  column_count?: number;
+  ticket_count?: number;
+  user_role?: TicketBoardRole;
+}
+
+export interface TicketBoardMember {
+  id: string;
+  board_id: string;
+  user_id: string;
+  role: TicketBoardRole;
+  name: string;
+  email: string;
+  avatar_url: string | null;
+}
+
+export interface TicketTimeLog {
+  id: string;
+  ticket_id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface TicketReminder {
+  id: string;
+  ticket_id: string;
+  user_id: string;
+  user_name: string;
+  remind_at: string;
+  message: string | null;
+  sent: boolean;
+}
+
+export interface TicketResolutionReport {
+  user_id: string;
+  user_name: string;
+  avatar_url: string | null;
+  total_tickets: number;
+  resolved_tickets: number;
+  avg_resolution_hours: number | null;
+  total_hours_logged: number;
+}

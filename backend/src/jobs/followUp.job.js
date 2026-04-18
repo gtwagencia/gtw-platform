@@ -208,6 +208,36 @@ async function runSlaCheck() {
   }
 }
 
+// ── Ticket reminders ───────────────────────────────────────────────────────
+
+async function runTicketReminders() {
+  const ticketSvc = require('../modules/tickets/tickets.service');
+  const reminders = await ticketSvc.getDueReminders();
+  for (const reminder of reminders) {
+    try {
+      // Send via WhatsApp if workspace has messaging configured
+      // For now just log — real delivery can be wired per workspace preferences
+      logger.info('Ticket reminder due', {
+        ticketTitle: reminder.ticket_title,
+        userName:    reminder.user_name,
+        message:     reminder.message,
+        workspaceId: reminder.workspace_id,
+      });
+      await ticketSvc.markReminderSent(reminder.id);
+    } catch (err) {
+      logger.error('Ticket reminder send error', { reminderId: reminder.id, err: err.message });
+    }
+  }
+}
+
+async function runRecurringTickets() {
+  const ticketSvc = require('../modules/tickets/tickets.service');
+  const spawned = await ticketSvc.spawnDueRecurringTickets();
+  if (spawned.length) {
+    logger.info('Recurring tickets spawned', { count: spawned.length });
+  }
+}
+
 // ── Schedule jobs ──────────────────────────────────────────────────────────
 
 function startJobs() {
@@ -243,7 +273,17 @@ function startJobs() {
     runSlaCheck().catch(err => logger.error('SLA check error', { err: err.message }));
   });
 
-  logger.info('Background jobs started (follow-up + AI analysis + SLA check)');
+  // Ticket reminders — every minute
+  cron.schedule('* * * * *', () => {
+    runTicketReminders().catch(err => logger.error('Ticket reminders error', { err: err.message }));
+  });
+
+  // Recurring tickets spawner — every day at 06:00
+  cron.schedule('0 6 * * *', () => {
+    runRecurringTickets().catch(err => logger.error('Recurring tickets error', { err: err.message }));
+  });
+
+  logger.info('Background jobs started (follow-up + AI analysis + SLA check + ticket reminders)');
 }
 
 module.exports = { startJobs, backfillAttending };
