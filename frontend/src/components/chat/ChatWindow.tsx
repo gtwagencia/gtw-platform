@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, FormEvent, useCallback } from 'react';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import clsx from 'clsx';
 import api from '@/lib/api';
@@ -497,11 +497,33 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
             const prevMsg    = messages[idx - 1];
             const showSender = isOut && msg.sender_name
               && (idx === 0 || prevMsg?.sender_id !== msg.sender_id || prevMsg?.direction !== 'outbound');
+
+            // Separador de data
+            const msgDate  = new Date(msg.created_at);
+            const prevDate = prevMsg ? new Date(prevMsg.created_at) : null;
+            const showDateSep = !prevDate || !isSameDay(msgDate, prevDate);
+            const dateSepLabel = isToday(msgDate)
+              ? 'Hoje'
+              : isYesterday(msgDate)
+                ? 'Ontem'
+                : format(msgDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+
+            // Timestamp: mostra data completa se não é hoje
+            const timeLabel = isToday(msgDate)
+              ? format(msgDate, 'HH:mm', { locale: ptBR })
+              : format(msgDate, "dd/MM · HH:mm", { locale: ptBR });
             const isMe       = msg.sender_id === user?.id;
 
             if (isPrivate) {
               return (
-                <div key={msg.id} className="flex flex-col items-center">
+                <div key={msg.id} className="flex flex-col items-center gap-1">
+                  {showDateSep && (
+                    <div className="flex items-center gap-2 w-full my-2">
+                      <div className="flex-1 h-px bg-gray-100" />
+                      <span className="text-xs text-gray-400 font-medium px-2">{dateSepLabel}</span>
+                      <div className="flex-1 h-px bg-gray-100" />
+                    </div>
+                  )}
                   <div className="max-w-md w-full bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2.5 text-sm shadow-sm">
                     <div className="flex items-center gap-1.5 mb-1">
                       <Lock className="w-3 h-3 text-amber-600" />
@@ -511,16 +533,22 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                       )}
                     </div>
                     {msg.content && <p className="whitespace-pre-wrap break-words text-gray-800">{msg.content}</p>}
-                    <div className="text-xs text-amber-500 mt-1">
-                      {format(new Date(msg.created_at), 'HH:mm', { locale: ptBR })}
-                    </div>
+                    <div className="text-xs text-amber-500 mt-1">{timeLabel}</div>
                   </div>
                 </div>
               );
             }
 
             return (
-              <div key={msg.id} className={clsx('flex flex-col', isOut ? 'items-end' : 'items-start')}>
+              <div key={msg.id} className="flex flex-col">
+                {showDateSep && (
+                  <div className="flex items-center gap-2 my-3">
+                    <div className="flex-1 h-px bg-gray-100" />
+                    <span className="text-xs text-gray-400 font-medium px-2 whitespace-nowrap">{dateSepLabel}</span>
+                    <div className="flex-1 h-px bg-gray-100" />
+                  </div>
+                )}
+              <div className={clsx('flex flex-col', isOut ? 'items-end' : 'items-start')}>
                 {showSender && (
                   <span className={clsx('text-xs font-medium mb-1 px-1', isMe ? 'text-brand-600' : 'text-purple-600')}>
                     {isMe ? 'Você' : msg.sender_name}
@@ -580,14 +608,27 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                       <FileText className="w-4 h-4 flex-shrink-0" />
                       <span className="truncate max-w-[180px]">{msg.content || 'Arquivo'}</span>
                     </a>
+                  ) : msg.message_type === 'reaction' ? (
+                    <span className="text-2xl leading-none">{msg.content}</span>
+                  ) : msg.message_type === 'location' ? (
+                    <p className="whitespace-pre-wrap break-words text-sm">
+                      {msg.content?.split('\n').map((line: string, i: number) =>
+                        i === 0 ? <span key={i} className="block">{line}</span>
+                          : <a key={i} href={line} target="_blank" rel="noopener noreferrer"
+                              className="underline opacity-80 text-xs block mt-0.5">{line}</a>
+                      )}
+                    </p>
+                  ) : msg.message_type === 'unsupported' || msg.message_type === 'deleted' ? (
+                    <p className="whitespace-pre-wrap break-words italic opacity-60 text-xs">{msg.content}</p>
                   ) : msg.content ? (
                     <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                   ) : null}
                   <div className={clsx('flex items-center justify-end gap-1 mt-1 text-xs', isOut ? 'text-white/60' : 'text-gray-400')}>
-                    <span>{format(new Date(msg.created_at), 'HH:mm', { locale: ptBR })}</span>
+                    <span>{timeLabel}</span>
                     {isOut && statusIcon(msg.status)}
                   </div>
                 </div>
+              </div>
               </div>
             );
           })

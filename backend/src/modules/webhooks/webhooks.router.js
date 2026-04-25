@@ -139,7 +139,71 @@ async function extractMessageContent(msg, inbox) {
     };
   }
 
-  return { content: '[mensagem não suportada]', messageType: 'text' };
+  // Reação a mensagem
+  if (msg.message?.reactionMessage) {
+    const emoji = msg.message.reactionMessage.text || '👍';
+    return { content: emoji, messageType: 'reaction' };
+  }
+
+  // Localização
+  if (msg.message?.locationMessage) {
+    const m = msg.message.locationMessage;
+    const lat = m.degreesLatitude;
+    const lng = m.degreesLongitude;
+    const label = m.name ? `📍 ${m.name}` : '📍 Localização compartilhada';
+    return {
+      content:     `${label}\nhttps://www.google.com/maps?q=${lat},${lng}`,
+      messageType: 'location',
+    };
+  }
+
+  // Contato(s) compartilhado(s)
+  if (msg.message?.contactMessage) {
+    const name = msg.message.contactMessage.displayName || 'Contato';
+    return { content: `👤 Contato: ${name}`, messageType: 'contact' };
+  }
+  if (msg.message?.contactsArrayMessage) {
+    const names = (msg.message.contactsArrayMessage.contacts || [])
+      .map(c => c.displayName).filter(Boolean).join(', ');
+    return { content: `👥 Contatos: ${names || 'compartilhados'}`, messageType: 'contact' };
+  }
+
+  // Enquete / Poll
+  if (msg.message?.pollCreationMessage) {
+    const poll = msg.message.pollCreationMessage;
+    const opts = (poll.options || []).map(o => `• ${o.optionName}`).join('\n');
+    return { content: `📊 ${poll.name}\n${opts}`, messageType: 'poll' };
+  }
+
+  // Mensagem de lista (botões)
+  if (msg.message?.listMessage) {
+    const m = msg.message.listMessage;
+    return { content: m.description || m.title || '📋 Mensagem de lista', messageType: 'text' };
+  }
+
+  // Mensagem com botões
+  if (msg.message?.buttonsMessage || msg.message?.templateMessage) {
+    const m = msg.message.buttonsMessage || msg.message.templateMessage?.hydratedTemplate;
+    return { content: m?.contentText || m?.hydratedContentText || '🔘 Mensagem com botões', messageType: 'text' };
+  }
+
+  // Mensagem revogada / apagada
+  if (msg.message?.protocolMessage?.type === 0) {
+    return { content: '🚫 Mensagem apagada', messageType: 'deleted' };
+  }
+
+  // Ephemeral / view-once: desempacota o conteúdo real
+  const inner = msg.message?.ephemeralMessage?.message
+    || msg.message?.viewOnceMessage?.message
+    || msg.message?.viewOnceMessageV2?.message;
+  if (inner) {
+    return extractMessageContent({ ...msg, message: inner }, inbox);
+  }
+
+  // Tipo desconhecido: mostra o nome do tipo para facilitar diagnóstico
+  const knownKey = Object.keys(msg.message || {}).find(k => k.endsWith('Message') || k.endsWith('Action'));
+  const typeName = knownKey ? knownKey.replace('Message', '').replace(/([A-Z])/g, ' $1').trim() : 'desconhecido';
+  return { content: `[${typeName}]`, messageType: 'unsupported' };
 }
 
 /**
