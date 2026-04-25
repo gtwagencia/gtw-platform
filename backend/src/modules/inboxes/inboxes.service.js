@@ -56,6 +56,7 @@ async function update(inboxId, workspaceId, body) {
     autoAssign:        'auto_assign',
     chatbotEnabled:    'chatbot_enabled',
     chatbotPrompt:     'chatbot_prompt',
+    groupsEnabled:     'groups_enabled',
   };
 
   const fields = [];

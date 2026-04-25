@@ -143,6 +143,98 @@ async function extractMessageContent(msg, inbox) {
 }
 
 /**
+ * Processa mensagens de grupos WhatsApp.
+ * - Cria/atualiza um contato para o grupo
+ * - Cria/reutiliza uma conversa is_group=true por inbox+group
+ * - Armazena sender_jid e sender_name de cada mensagem
+ */
+async function handleGroupMessage(msg, inbox, io) {
+  try {
+    const remoteJid  = msg.key?.remoteJid;                        // ex: 123456@g.us
+    const isFromMe   = !!msg.key?.fromMe;
+    const senderJid  = msg.key?.participant || msg.participant || (isFromMe ? 'me' : null);
+    const senderName = msg.pushName || normalizePhone(senderJid) || 'Desconhecido';
+    const groupPhone = normalizePhone(remoteJid);                  // só os dígitos do ID do grupo
+
+    // Nome do grupo: vem em alguns eventos; fallback para o ID
+    const groupName  = msg.message?.groupInviteMessage?.groupName
+      || event?.data?.name
+      || `Grupo ${groupPhone}`;
+
+    // Upsert contato-grupo
+    let contact;
+    try {
+      contact = await contactSvc.create(inbox.workspace_id, { name: groupName, phone: groupPhone });
+    } catch {
+      const r = await query(
+        'SELECT * FROM contacts WHERE workspace_id = $1 AND phone = $2',
+        [inbox.workspace_id, groupPhone]
+      );
+      contact = r.rows[0];
+    }
+    if (!contact) return;
+
+    // Conversa única por grupo (is_group=true, group_jid)
+    let conversation;
+    const convRes = await query(
+      `SELECT * FROM conversations WHERE inbox_id = $1 AND group_jid = $2 LIMIT 1`,
+      [inbox.id, remoteJid]
+    );
+    if (convRes.rows.length) {
+      conversation = convRes.rows[0];
+    } else {
+      const newConv = await query(
+        `INSERT INTO conversations
+           (workspace_id, inbox_id, contact_id, remote_jid, group_jid, is_group, status)
+         VALUES ($1, $2, $3, $4, $5, true, 'open')
+         RETURNING *`,
+        [inbox.workspace_id, inbox.id, contact.id, remoteJid, remoteJid]
+      );
+      conversation = newConv.rows[0];
+    }
+
+    const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg, inbox);
+    const direction = isFromMe ? 'outbound' : 'inbound';
+
+    // Insere a mensagem com sender_jid e sender_name
+    const msgRes = await query(
+      `INSERT INTO messages
+         (conversation_id, direction, content, message_type, media_url, media_mime_type,
+          evolution_msg_id, sender_jid, sender_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (evolution_msg_id) DO NOTHING
+       RETURNING *`,
+      [
+        conversation.id, direction, content, messageType,
+        mediaUrl || null, mediaMimeType || null,
+        msg.key?.id || null, senderJid || null, senderName,
+      ]
+    );
+    if (!msgRes.rows.length) return; // duplicata
+
+    const message = msgRes.rows[0];
+    await convSvc.refreshLastMessage(conversation.id, direction);
+    await query('UPDATE conversations SET last_inbound_at = NOW() WHERE id = $1', [conversation.id]);
+
+    // Atualiza nome do grupo se mudou
+    if (groupName && groupName !== contact.name) {
+      await query('UPDATE contacts SET name = $1 WHERE id = $2', [groupName, contact.id]);
+    }
+
+    io?.to(`conv:${conversation.id}`).emit('message:new', message);
+    io?.to(`ws:${inbox.workspace_id}`).emit('message:new', message);
+    io?.to(`ws:${inbox.workspace_id}`).emit('conversation:updated', {
+      conversationId:  conversation.id,
+      lastMessageAt:   new Date(),
+      lastMessageText: content,
+      unreadCount:     direction === 'inbound' ? 1 : 0,
+    });
+  } catch (err) {
+    logger.error('Erro ao processar mensagem de grupo', { err: err.message });
+  }
+}
+
+/**
  * Round-robin auto-assign: pick agent in the department with fewest open conversations.
  */
 async function autoAssignAgent(workspaceId, departmentId) {
@@ -240,7 +332,16 @@ router.post('/evolution/:inboxId', async (req, res) => {
 
       for (const msg of messages) {
         const remoteJid = msg.key?.remoteJid;
-        if (!remoteJid || remoteJid.includes('@g.us')) continue;
+        if (!remoteJid) continue;
+
+        const isGroup  = remoteJid.includes('@g.us');
+
+        // ── Grupos: só processa se groups_enabled no inbox ────────────
+        if (isGroup) {
+          if (!inbox.groups_enabled) continue;
+          await handleGroupMessage(msg, inbox, io, event);
+          continue;
+        }
 
         const isFromMe = !!msg.key?.fromMe;
         const phone    = normalizePhone(remoteJid);
@@ -250,12 +351,23 @@ router.post('/evolution/:inboxId', async (req, res) => {
         if (isFromMe) {
           const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg, inbox);
 
-          // Find contact and conversation (only insert if we know this contact)
+          // Busca ou cria o contato (mensagens enviadas pelo celular para números novos)
           const contactRes = await query(
             'SELECT * FROM contacts WHERE workspace_id = $1 AND phone = $2',
             [inbox.workspace_id, phone]
           );
-          const contact = contactRes.rows[0];
+          let contact = contactRes.rows[0];
+          if (!contact) {
+            try {
+              contact = await contactSvc.create(inbox.workspace_id, { name: phone, phone });
+            } catch {
+              const r = await query(
+                'SELECT * FROM contacts WHERE workspace_id = $1 AND phone = $2',
+                [inbox.workspace_id, phone]
+              );
+              contact = r.rows[0];
+            }
+          }
           if (!contact) continue;
 
           const { conversation } = await convSvc.findOrCreate(inbox.workspace_id, {
@@ -384,14 +496,17 @@ router.post('/evolution/:inboxId', async (req, res) => {
         const isNewOrBotActive = created || conversation.bot_active;
         if (inbox.chatbot_enabled && !conversation.assignee_id && isNewOrBotActive) {
           const wsRes = await query(
-            'SELECT anthropic_api_key, openai_api_key, ai_provider, ai_model FROM workspaces WHERE id = $1',
+            'SELECT anthropic_api_key, openai_api_key, ai_provider, ai_model, ai_ignore_groups FROM workspaces WHERE id = $1',
             [inbox.workspace_id]
           );
           const ws       = wsRes.rows[0] || {};
           const provider = ws.ai_provider || 'anthropic';
           const apiKey   = provider === 'openai' ? ws.openai_api_key : ws.anthropic_api_key;
 
-          if (apiKey) {
+          // Respeita configuração de ignorar grupos no funil de IA
+          if (ws.ai_ignore_groups && conversation.is_group) {
+            // não executa IA em grupos
+          } else if (apiKey) {
             await query('UPDATE conversations SET bot_active = true WHERE id = $1', [conversation.id]);
 
             aiSvc.generateChatbotResponse(conversation.id, inbox.chatbot_prompt, apiKey, provider, ws.ai_model || null)

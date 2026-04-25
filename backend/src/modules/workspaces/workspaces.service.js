@@ -87,6 +87,7 @@ async function update(workspaceId, body) {
     aiProvider:           'ai_provider',
     aiModel:              'ai_model',
     slaResponseMinutes:   'sla_response_minutes',
+    aiIgnoreGroups:       'ai_ignore_groups',
   };
 
   const fields = [];
@@ -124,13 +125,13 @@ async function listMembers(workspaceId) {
   return r.rows;
 }
 
-async function addMember(workspaceId, { email, role, name }) {
+async function addMember(workspaceId, orgId, { email, role, name }) {
   let userRes = await query('SELECT id, name FROM users WHERE email = $1', [email.toLowerCase()]);
   let tempPassword = null;
 
   if (!userRes.rows.length) {
     // Cria o usuário com senha temporária aleatória
-    tempPassword = crypto.randomBytes(6).toString('hex'); // ex: "a3f8c21d4e90"
+    tempPassword = crypto.randomBytes(6).toString('hex');
     const hash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
     const userName = name || email.split('@')[0];
     const created = await query(
@@ -141,6 +142,15 @@ async function addMember(workspaceId, { email, role, name }) {
   }
 
   const userId = userRes.rows[0].id;
+
+  // Garante que o usuário está na organização (sem isso ele não consegue fazer login)
+  await query(
+    `INSERT INTO org_memberships (org_id, user_id, role)
+     VALUES ($1, $2, 'member')
+     ON CONFLICT (org_id, user_id) DO NOTHING`,
+    [orgId, userId]
+  );
+
   await query(
     `INSERT INTO workspace_memberships (workspace_id, user_id, role)
      VALUES ($1, $2, $3)
@@ -153,7 +163,7 @@ async function addMember(workspaceId, { email, role, name }) {
     name:          userRes.rows[0].name,
     email:         email.toLowerCase(),
     role:          role || 'agent',
-    temp_password: tempPassword, // null se o usuário já existia
+    temp_password: tempPassword,
   };
 }
 

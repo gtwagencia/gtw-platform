@@ -5,12 +5,13 @@ import { useAuth } from '@/store/auth';
 import Header from '@/components/layout/Header';
 import api from '@/lib/api';
 import type { Inbox } from '@/types';
-import { Plus, Wifi, WifiOff, Loader, QrCode, Trash2, ChevronDown, ChevronRight, Bot, Users } from 'lucide-react';
+import { Plus, Wifi, WifiOff, Loader, QrCode, Trash2, ChevronDown, ChevronRight, Bot, Users, MessagesSquare } from 'lucide-react';
 
 interface InboxEditForm {
   autoAssign?: boolean;
   chatbotEnabled?: boolean;
   chatbotPrompt?: string;
+  groupsEnabled?: boolean;
 }
 
 export default function InboxesPage() {
@@ -45,7 +46,10 @@ export default function InboxesPage() {
 
   async function handleSaveSettings(inboxId: string) {
     if (!currentWorkspace) return;
-    await api.put(`/workspaces/${currentWorkspace.id}/inboxes/${inboxId}`, editForm);
+    await api.put(`/workspaces/${currentWorkspace.id}/inboxes/${inboxId}`, {
+      ...editForm,
+      groupsEnabled: editForm.groupsEnabled,
+    });
     setExpandedId(null);
     setEditForm({});
     load();
@@ -67,6 +71,7 @@ export default function InboxesPage() {
         autoAssign:     inbox.auto_assign,
         chatbotEnabled: inbox.chatbot_enabled,
         chatbotPrompt:  inbox.chatbot_prompt || '',
+        groupsEnabled:  (inbox as any).groups_enabled ?? false,
       });
     }
   }
@@ -261,6 +266,23 @@ export default function InboxesPage() {
                           <p className="text-xs text-gray-400 mt-1">Requer chave da API Anthropic configurada nas configurações do workspace.</p>
                         </div>
                       )}
+                    </div>
+
+                    {/* Groups toggle */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                          <MessagesSquare className="w-4 h-4 text-green-500" />
+                          Receber mensagens de grupos
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">Captura todas as mensagens enviadas e recebidas em grupos do WhatsApp</p>
+                      </div>
+                      <button
+                        onClick={() => setEditForm(prev => ({ ...prev, groupsEnabled: !prev.groupsEnabled }))}
+                        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${editForm.groupsEnabled ? 'bg-green-500' : 'bg-gray-200'}`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow ${editForm.groupsEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </button>
                     </div>
 
                     <div className="flex gap-2">

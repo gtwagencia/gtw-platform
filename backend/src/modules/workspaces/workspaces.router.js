@@ -76,13 +76,13 @@ router.post('/:workspaceId/members', authenticate, orgContext, workspaceContext,
     if (req.workspaceRole !== 'admin' && !['owner', 'admin'].includes(req.orgRole) && !req.user.isSuperAdmin) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
-    const { email, role } = req.body;
+    const { email, role, name } = req.body;
     if (!email) return res.status(400).json({ error: 'email é obrigatório' });
     const VALID_ROLES = ['admin', 'agent', 'member'];
     if (role && !VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `role inválido. Use: ${VALID_ROLES.join(', ')}` });
     }
-    const member = await svc.addMember(req.params.workspaceId, { email, role });
+    const member = await svc.addMember(req.params.workspaceId, req.params.orgId, { email, role, name });
     res.status(201).json(member);
   } catch (err) { next(err); }
 });
