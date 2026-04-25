@@ -59,6 +59,7 @@ export interface Workspace {
   business_hours: BusinessHours | null;
   follow_up_enabled: boolean;
   ai_analysis_enabled: boolean;
+  ai_ignore_groups: boolean;
   ai_provider: string | null;
   ai_model: string | null;
   has_anthropic_key: boolean;
