@@ -49,8 +49,11 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   const [ticketTitle,    setTicketTitle]    = useState('');
   const [ticketDesc,     setTicketDesc]     = useState('');
   const [ticketPriority, setTicketPriority] = useState('medium');
-  const [ticketSaving,   setTicketSaving]   = useState(false);
-  const [hoveredMsgId,   setHoveredMsgId]   = useState<string | null>(null);
+  const [ticketSaving,    setTicketSaving]    = useState(false);
+  const [hoveredMsgId,    setHoveredMsgId]    = useState<string | null>(null);
+  // Seleção múltipla de mensagens
+  const [selectionMode,   setSelectionMode]   = useState(false);
+  const [selectedMsgIds,  setSelectedMsgIds]  = useState<Set<string>>(new Set());
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const bottomRef       = useRef<HTMLDivElement>(null);
   const assignRef       = useRef<HTMLDivElement>(null);
@@ -261,6 +264,34 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         if (ticketBoards[0].columns.length > 0) setTicketColId(ticketBoards[0].columns[0].id);
       }
     }
+  }
+
+  function enterSelectionMode(msgId: string) {
+    setSelectionMode(true);
+    setSelectedMsgIds(new Set([msgId]));
+  }
+
+  function toggleMsgSelection(msgId: string) {
+    setSelectedMsgIds(prev => {
+      const next = new Set(prev);
+      next.has(msgId) ? next.delete(msgId) : next.add(msgId);
+      if (next.size === 0) setSelectionMode(false);
+      return next;
+    });
+  }
+
+  function cancelSelection() {
+    setSelectionMode(false);
+    setSelectedMsgIds(new Set());
+  }
+
+  function openTicketFromSelection() {
+    const combined = messages
+      .filter(m => selectedMsgIds.has(m.id) && m.content)
+      .map(m => m.content!)
+      .join('\n\n---\n\n');
+    cancelSelection();
+    openTicketModal(combined);
   }
 
   function handleTicketBoardChange(boardId: string) {
@@ -553,20 +584,57 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                   </div>
                 )}
               <div
-                className={clsx('flex flex-col', isOut ? 'items-end' : 'items-start')}
-                onMouseEnter={() => setHoveredMsgId(msg.id)}
+                className={clsx(
+                  'flex gap-2 items-start',
+                  isOut ? 'flex-row-reverse' : 'flex-row',
+                  selectionMode && 'cursor-pointer'
+                )}
+                onMouseEnter={() => !selectionMode && setHoveredMsgId(msg.id)}
                 onMouseLeave={() => setHoveredMsgId(null)}
+                onClick={() => selectionMode && msg.content && toggleMsgSelection(msg.id)}
               >
+                {/* Checkbox (visível no hover ou quando em modo seleção) */}
+                {msg.content && msg.message_type === 'text' && (
+                  <div className={clsx(
+                    'flex-shrink-0 flex items-center self-center transition-opacity',
+                    (selectionMode || hoveredMsgId === msg.id) ? 'opacity-100' : 'opacity-0'
+                  )}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectionMode) {
+                          toggleMsgSelection(msg.id);
+                        } else {
+                          enterSelectionMode(msg.id);
+                        }
+                      }}
+                      className={clsx(
+                        'w-5 h-5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0',
+                        selectedMsgIds.has(msg.id)
+                          ? 'bg-brand-600 border-brand-600 text-white'
+                          : 'border-gray-300 bg-white hover:border-brand-400'
+                      )}
+                    >
+                      {selectedMsgIds.has(msg.id) && (
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                          <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+              <div className={clsx('flex flex-col', isOut ? 'items-end' : 'items-start')}>
                 {showSender && (
                   <span className={clsx('text-xs font-medium mb-1 px-1', isMe ? 'text-brand-600' : 'text-purple-600')}>
                     {isMe ? 'Você' : msg.sender_name}
                   </span>
                 )}
 
-                {/* Botão "Criar ticket a partir desta mensagem" */}
-                {hoveredMsgId === msg.id && msg.content && msg.message_type === 'text' && (
+                {/* Botão "Criar ticket" no hover (fora do modo seleção) */}
+                {!selectionMode && hoveredMsgId === msg.id && msg.content && msg.message_type === 'text' && (
                   <button
-                    onClick={() => openTicketModal(msg.content ?? undefined)}
+                    onClick={(e) => { e.stopPropagation(); openTicketModal(msg.content ?? undefined); }}
                     className={clsx(
                       'flex items-center gap-1 text-xs px-2 py-0.5 rounded mb-1 transition-colors',
                       'bg-white border border-gray-200 text-gray-500 hover:text-brand-600 hover:border-brand-300 shadow-sm'
@@ -659,6 +727,31 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* ── Barra de seleção múltipla ─────────────────────────── */}
+      {selectionMode && selectedMsgIds.size > 0 && (
+        <div className="bg-white border-t-2 border-brand-400 px-4 py-3 flex items-center justify-between flex-shrink-0 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+          <span className="text-sm text-gray-700 font-medium">
+            {selectedMsgIds.size} mensagem{selectedMsgIds.size !== 1 ? 's' : ''} selecionada{selectedMsgIds.size !== 1 ? 's' : ''}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={cancelSelection}
+              className="btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
+            >
+              <X className="w-3.5 h-3.5" />
+              Cancelar
+            </button>
+            <button
+              onClick={openTicketFromSelection}
+              className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+            >
+              <Ticket className="w-3.5 h-3.5" />
+              Criar ticket
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Criar Ticket Modal ───────────────────────────────── */}
       {showTicket && (
