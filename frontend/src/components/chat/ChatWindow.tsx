@@ -398,7 +398,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
 
         {/* Criar Ticket */}
         <button
-          onClick={openTicketModal}
+          onClick={() => openTicketModal()}
           className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
           title="Criar ticket"
         >
