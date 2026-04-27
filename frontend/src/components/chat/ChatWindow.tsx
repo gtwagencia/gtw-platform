@@ -566,7 +566,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                 {/* Botão "Criar ticket a partir desta mensagem" */}
                 {hoveredMsgId === msg.id && msg.content && msg.message_type === 'text' && (
                   <button
-                    onClick={() => openTicketModal(msg.content)}
+                    onClick={() => openTicketModal(msg.content ?? undefined)}
                     className={clsx(
                       'flex items-center gap-1 text-xs px-2 py-0.5 rounded mb-1 transition-colors',
                       'bg-white border border-gray-200 text-gray-500 hover:text-brand-600 hover:border-brand-300 shadow-sm'
