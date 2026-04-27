@@ -521,9 +521,9 @@ function TicketCard({ ticket, isDragging, onClick }: { ticket: Ticket; isDraggin
       )}
     >
       {/* Labels */}
-      {ticket.labels.length > 0 && (
+      {(ticket.labels?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
-          {ticket.labels.map(l => (
+          {ticket.labels!.map(l => (
             <span key={l.id} className="text-xs px-1.5 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: l.color }}>
               {l.name}
             </span>

@@ -293,6 +293,9 @@ async function createTicket(boardId, userId, { columnId, title, description, ass
     }
   }
 
+  // Garante que o campo labels sempre existe (evita crash no frontend ao acessar .length)
+  ticket.labels = [];
+
   return ticket;
 }
 
