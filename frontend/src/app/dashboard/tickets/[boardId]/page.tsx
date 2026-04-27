@@ -11,6 +11,7 @@ import {
   Plus, X, Trash2, Clock, User, Flag, Calendar,
   ChevronRight, Settings, Users, GripVertical,
   Tag, RefreshCw, Timer, Play, Square, Edit3, AlertCircle, Phone,
+  MoreVertical, Check, Pencil, Circle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
@@ -720,6 +721,12 @@ export default function BoardPage() {
   const [showMembers, setShowMembers] = useState(false);
   const [creatingInColumn, setCreatingInColumn] = useState<string | null>(null);
 
+  // Column editing
+  const [colMenuId,     setColMenuId]     = useState<string | null>(null);
+  const [editingColId,  setEditingColId]  = useState<string | null>(null);
+  const [editingColName,setEditingColName]= useState('');
+  const colMenuRef = useRef<HTMLDivElement>(null);
+
   const canEdit = (() => {
     if (!board) return false;
     if (!board.user_role) return true; // workspace admin
@@ -738,6 +745,57 @@ export default function BoardPage() {
     api.get<TicketLabel[]>(`/workspaces/${currentWorkspace.id}/tickets/labels`).then(r => setLabels(r.data)).catch(() => {});
     api.get<TicketBoardMember[]>(`/workspaces/${currentWorkspace.id}/tickets/boards/${boardId}/members`).then(r => setMembers(r.data)).catch(() => {});
   }, [currentWorkspace, boardId]);
+
+  // Close col menu on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) {
+        setColMenuId(null);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  async function handleRenameCol(colId: string) {
+    if (!currentWorkspace || !editingColName.trim()) return;
+    try {
+      const { data } = await api.put(
+        `/workspaces/${currentWorkspace.id}/tickets/boards/${boardId}/columns/${colId}`,
+        { name: editingColName.trim() }
+      );
+      setBoard(prev => prev ? {
+        ...prev,
+        columns: prev.columns.map(c => c.id === colId ? { ...c, name: data.name } : c),
+      } : prev);
+    } finally {
+      setEditingColId(null);
+      setEditingColName('');
+    }
+  }
+
+  async function handleToggleDone(col: TicketColumn) {
+    if (!currentWorkspace) return;
+    const { data } = await api.put(
+      `/workspaces/${currentWorkspace.id}/tickets/boards/${boardId}/columns/${col.id}`,
+      { isDone: !col.is_done }
+    );
+    setBoard(prev => prev ? {
+      ...prev,
+      columns: prev.columns.map(c => c.id === col.id ? { ...c, is_done: data.is_done } : c),
+    } : prev);
+    setColMenuId(null);
+  }
+
+  async function handleDeleteCol(colId: string) {
+    if (!currentWorkspace || !confirm('Excluir esta coluna? Os tickets serão movidos para a primeira coluna.')) return;
+    await api.delete(`/workspaces/${currentWorkspace.id}/tickets/boards/${boardId}/columns/${colId}`);
+    setBoard(prev => prev ? {
+      ...prev,
+      columns: prev.columns.filter(c => c.id !== colId),
+    } : prev);
+    setColMenuId(null);
+  }
 
   async function loadBoard() {
     if (!currentWorkspace) return;
@@ -860,15 +918,80 @@ export default function BoardPage() {
             {board.columns.map(col => (
               <div key={col.id} className="w-72 flex-shrink-0 flex flex-col">
                 {/* Column header */}
-                <div className="flex items-center gap-2 mb-2 px-1">
+                <div className="flex items-center gap-2 mb-2 px-1 group">
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
-                  <h3 className="font-semibold text-gray-800 text-sm flex-1 truncate">{col.name}</h3>
+
+                  {/* Inline rename */}
+                  {editingColId === col.id ? (
+                    <input
+                      autoFocus
+                      value={editingColName}
+                      onChange={e => setEditingColName(e.target.value)}
+                      onBlur={() => handleRenameCol(col.id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleRenameCol(col.id);
+                        if (e.key === 'Escape') { setEditingColId(null); setEditingColName(''); }
+                      }}
+                      className="flex-1 text-sm font-semibold text-gray-800 bg-white border border-indigo-300
+                                 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-indigo-400"
+                    />
+                  ) : (
+                    <h3
+                      className="font-semibold text-gray-800 text-sm flex-1 truncate cursor-default"
+                      onDoubleClick={() => {
+                        if (!isManager) return;
+                        setEditingColId(col.id);
+                        setEditingColName(col.name);
+                      }}
+                    >
+                      {col.name}
+                    </h3>
+                  )}
+
                   {col.is_done && (
-                    <span className="text-xs text-green-600 font-medium bg-green-50 px-1.5 rounded">Concluído</span>
+                    <span className="text-xs text-green-600 font-medium bg-green-50 px-1.5 rounded">✓</span>
                   )}
                   <span className="text-xs font-medium text-gray-400 bg-white border border-gray-200 rounded-full px-1.5 py-0.5">
                     {col.tickets.length}
                   </span>
+
+                  {/* Column menu (managers only) */}
+                  {isManager && (
+                    <div className="relative" ref={colMenuId === col.id ? colMenuRef : undefined}>
+                      <button
+                        onClick={() => setColMenuId(prev => prev === col.id ? null : col.id)}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-opacity"
+                        title="Opções da coluna"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+
+                      {colMenuId === col.id && (
+                        <div className="absolute right-0 top-6 w-44 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1 text-sm">
+                          <button
+                            onClick={() => { setEditingColId(col.id); setEditingColName(col.name); setColMenuId(null); }}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-gray-700"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-gray-400" /> Renomear
+                          </button>
+                          <button
+                            onClick={() => handleToggleDone(col)}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-gray-700"
+                          >
+                            <Check className="w-3.5 h-3.5 text-green-500" />
+                            {col.is_done ? 'Desmarcar concluído' : 'Marcar como concluído'}
+                          </button>
+                          <div className="h-px bg-gray-100 my-1" />
+                          <button
+                            onClick={() => handleDeleteCol(col.id)}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-red-50 text-red-600"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Excluir coluna
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Droppable */}

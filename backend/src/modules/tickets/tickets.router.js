@@ -70,6 +70,20 @@ router.post('/boards', ...auth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /boards/:boardId/duplicate — duplica o board (colunas + tickets)
+router.post('/boards/:boardId/duplicate', ...auth,
+  (req, res, next) => requireBoardAccess(req, res, next, true),
+  async (req, res, next) => {
+    try {
+      const newName = req.body.name?.trim() || undefined;
+      const board = await svc.duplicateBoard(
+        req.params.boardId, req.params.workspaceId, req.user.sub, newName
+      );
+      res.status(201).json(board);
+    } catch (err) { next(err); }
+  }
+);
+
 router.get('/boards/:boardId', ...auth, (req, res, next) => requireBoardAccess(req, res, next, false), async (req, res, next) => {
   try {
     const board = await svc.getBoard(req.params.boardId, req.params.workspaceId);

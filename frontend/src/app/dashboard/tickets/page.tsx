@@ -8,7 +8,7 @@ import api from '@/lib/api';
 import type { TicketBoard } from '@/types';
 import {
   Plus, LayoutGrid, Archive, Settings, Users,
-  Ticket, Calendar, CheckSquare, BarChart2,
+  Ticket, Calendar, CheckSquare, BarChart2, Copy,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatDistanceToNow } from 'date-fns';
@@ -111,6 +111,9 @@ export default function TicketsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [ticketsEnabled, setTicketsEnabled] = useState<boolean | null>(null);
   const [togglingEnabled, setTogglingEnabled] = useState(false);
+  const [duplicating, setDuplicating] = useState<string | null>(null); // boardId sendo duplicado
+  const [duplicateName, setDuplicateName] = useState('');
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
 
   const isAdmin = user?.orgs?.some(o => ['owner', 'admin'].includes(o.role));
 
@@ -133,6 +136,25 @@ export default function TicketsPage() {
       setTicketsEnabled(false);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDuplicate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!currentWorkspace || !duplicating) return;
+    setDuplicateLoading(true);
+    try {
+      const { data } = await api.post<TicketBoard>(
+        `/workspaces/${currentWorkspace.id}/tickets/boards/${duplicating}/duplicate`,
+        { name: duplicateName.trim() || undefined }
+      );
+      setBoards(prev => [data, ...prev]);
+      setDuplicating(null);
+      setDuplicateName('');
+      router.push(`/dashboard/tickets/${data.id}`);
+    } catch {
+    } finally {
+      setDuplicateLoading(false);
     }
   }
 
@@ -278,8 +300,21 @@ export default function TicketsPage() {
                     </span>
                   </div>
                 )}
-                <div className="text-xs text-gray-400 mt-2">
-                  Criado {formatDistanceToNow(new Date(board.created_at), { locale: ptBR, addSuffix: true })}
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-xs text-gray-400">
+                    Criado {formatDistanceToNow(new Date(board.created_at), { locale: ptBR, addSuffix: true })}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDuplicating(board.id);
+                      setDuplicateName(`${board.name} (cópia)`);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-opacity"
+                    title="Duplicar board"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </button>
             ))}
@@ -300,6 +335,44 @@ export default function TicketsPage() {
           </div>
         )}
       </div>
+
+      {/* Duplicate modal */}
+      {duplicating && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <Copy className="w-5 h-5 text-indigo-500" /> Duplicar Board
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Cria um novo board com as mesmas colunas e tickets. Ideal para usar como template.
+            </p>
+            <form onSubmit={handleDuplicate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do novo board</label>
+                <input
+                  autoFocus
+                  value={duplicateName}
+                  onChange={e => setDuplicateName(e.target.value)}
+                  className="input w-full"
+                  placeholder="Ex: Projeto Site Cliente X"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setDuplicating(null); setDuplicateName(''); }}
+                  className="btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button type="submit" disabled={duplicateLoading} className="btn-primary">
+                  {duplicateLoading ? 'Duplicando...' : 'Duplicar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showCreate && (
         <CreateBoardModal

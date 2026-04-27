@@ -141,6 +141,71 @@ async function getBoard(boardId, workspaceId) {
   return board;
 }
 
+/**
+ * Duplica um board: cria um novo com as mesmas colunas e tickets do board de origem.
+ * Tickets copiados perdem assignee, time logs e datas — preservam estrutura/título.
+ */
+async function duplicateBoard(boardId, workspaceId, userId, newName) {
+  // Carrega o board original com colunas e tickets
+  const boardRes = await query(
+    `SELECT * FROM ticket_boards WHERE id = $1 AND workspace_id = $2`,
+    [boardId, workspaceId]
+  );
+  if (!boardRes.rows.length) throw Object.assign(new Error('Board não encontrado'), { status: 404 });
+  const source = boardRes.rows[0];
+
+  const colsRes = await query(
+    `SELECT * FROM ticket_columns WHERE board_id = $1 ORDER BY position`,
+    [boardId]
+  );
+  const sourceCols = colsRes.rows;
+
+  // Cria o novo board
+  const name = newName || `${source.name} (cópia)`;
+  const newBoardRes = await query(
+    `INSERT INTO ticket_boards (workspace_id, name, description, color, created_by)
+     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [workspaceId, name, source.description || null, source.color, userId]
+  );
+  const newBoard = newBoardRes.rows[0];
+
+  // Criador como manager
+  await query(
+    `INSERT INTO ticket_board_members (board_id, user_id, role) VALUES ($1,$2,'manager')
+     ON CONFLICT (board_id, user_id) DO NOTHING`,
+    [newBoard.id, userId]
+  );
+
+  // Copia colunas e tickets de cada coluna
+  for (const col of sourceCols) {
+    const newColRes = await query(
+      `INSERT INTO ticket_columns (board_id, name, color, position, is_done)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [newBoard.id, col.name, col.color, col.position, col.is_done]
+    );
+    const newCol = newColRes.rows[0];
+
+    // Copia tickets desta coluna (sem assignee, sem time logs, sem datas reais)
+    const ticketsRes = await query(
+      `SELECT * FROM tickets WHERE column_id = $1 ORDER BY position`,
+      [col.id]
+    );
+    for (let i = 0; i < ticketsRes.rows.length; i++) {
+      const t = ticketsRes.rows[i];
+      await query(
+        `INSERT INTO tickets
+           (board_id, column_id, title, description, priority, position,
+            estimated_hours, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [newBoard.id, newCol.id, t.title, t.description, t.priority, i,
+         t.estimated_hours || null, userId]
+      );
+    }
+  }
+
+  return newBoard;
+}
+
 async function updateBoard(boardId, workspaceId, body) {
   const { name, description, color, isArchived } = body;
   const map = { name: 'name', description: 'description', color: 'color', isArchived: 'is_archived' };
@@ -750,6 +815,7 @@ module.exports = {
   listBoards,
   listAllBoards,
   createBoard,
+  duplicateBoard,
   getBoard,
   updateBoard,
   archiveBoard,
