@@ -32,7 +32,7 @@ const ROLE_LABELS: Record<string, { label: string; icon: React.ElementType; colo
 
 export default function OrgPage() {
   const searchParams = useSearchParams();
-  const { currentOrg } = useAuth();
+  const { currentOrg, currentWorkspace } = useAuth();
   const { workspaces, fetchForOrg } = useWorkspaceStore();
 
   const [tab,          setTab]          = useState<Tab>((searchParams.get('tab') as Tab) || 'members');
@@ -67,12 +67,14 @@ export default function OrgPage() {
     if (!currentOrg || !canManage) return;
     setLoading(true);
     try {
-      const { data } = await api.get(`/orgs/${currentOrg.id}/members`);
+      // Filtra por workspace atual para não mostrar membros de outros workspaces
+      const params = currentWorkspace ? `?workspaceId=${currentWorkspace.id}` : '';
+      const { data } = await api.get(`/orgs/${currentOrg.id}/members${params}`);
       setMembers(data);
     } finally {
       setLoading(false);
     }
-  }, [currentOrg, canManage]);
+  }, [currentOrg, currentWorkspace, canManage]);
 
   useEffect(() => {
     loadMembers();

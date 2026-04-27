@@ -60,7 +60,24 @@ async function update(orgId, { name, logoUrl, plan, isActive }) {
 
 // ── Members ────────────────────────────────────────────────────────────────
 
-async function listMembers(orgId) {
+async function listMembers(orgId, workspaceId = null) {
+  // Se workspaceId for informado, filtra apenas membros que também
+  // pertencem àquele workspace (evita mostrar membros de outros workspaces).
+  if (workspaceId) {
+    const r = await query(
+      `SELECT u.id, u.name, u.email, u.avatar_url, u.last_login_at,
+              om.role, om.created_at AS joined_at,
+              wm.role AS workspace_role
+       FROM org_memberships om
+       JOIN users u ON u.id = om.user_id
+       JOIN workspace_memberships wm ON wm.user_id = om.user_id AND wm.workspace_id = $2
+       WHERE om.org_id = $1
+       ORDER BY u.name`,
+      [orgId, workspaceId]
+    );
+    return r.rows;
+  }
+
   const r = await query(
     `SELECT u.id, u.name, u.email, u.avatar_url, u.last_login_at, om.role, om.created_at AS joined_at
      FROM org_memberships om

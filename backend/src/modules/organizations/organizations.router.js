@@ -36,7 +36,8 @@ router.put('/:orgId', authenticate, orgContext, requireOrgRole('owner'), async (
 
 router.get('/:orgId/members', authenticate, orgContext, requireOrgRole('owner', 'admin'), async (req, res, next) => {
   try {
-    const members = await svc.listMembers(req.params.orgId);
+    const workspaceId = req.query.workspaceId || null;
+    const members = await svc.listMembers(req.params.orgId, workspaceId);
     res.json(members);
   } catch (err) { next(err); }
 });
