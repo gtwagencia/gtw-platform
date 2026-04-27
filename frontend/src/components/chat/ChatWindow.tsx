@@ -722,6 +722,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                 </div>
               </div>
               </div>
+            </div>
             );
           })
         )}
