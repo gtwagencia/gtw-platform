@@ -3,26 +3,32 @@
 const { query }    = require('../../config/database');
 const inboxesSvc   = require('../inboxes/inboxes.service');
 
+const logger = require('../../utils/logger');
+
 async function buildVisibilityClause(params, { isSuperAdmin, orgRole, workspaceRole, userId, workspaceId }) {
   const isAdmin = isSuperAdmin
     || ['owner', 'admin'].includes(orgRole)
     || workspaceRole === 'admin';
+
+  logger.info('[visibility] check', { userId, workspaceId, orgRole, workspaceRole, isAdmin });
 
   if (isAdmin) return '';
 
   // Verifica se o agente tem inboxes vinculados
   const inboxIds = workspaceId ? await inboxesSvc.getUserInboxIds(userId, workspaceId) : [];
 
+  logger.info('[visibility] inboxIds for agent', { userId, inboxIds });
+
   params.push(userId);
   const userIdx = params.length;
 
   if (inboxIds.length > 0) {
-    // Agente vinculado a inboxes específicos:
-    // vê conversas atribuídas a ele OU não atribuídas nos seus inboxes
+    // Cast explícito ::uuid[] necessário pois node-postgres serializa como text[]
     params.push(inboxIds);
+    const arrIdx = params.length;
     return `AND (
       c.assignee_id = $${userIdx}
-      OR (c.assignee_id IS NULL AND c.inbox_id = ANY($${params.length}))
+      OR (c.assignee_id IS NULL AND c.inbox_id = ANY($${arrIdx}::uuid[]))
     )`;
   }
 
