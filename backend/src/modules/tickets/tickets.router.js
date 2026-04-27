@@ -187,12 +187,32 @@ router.post('/boards/:boardId/tickets/from-conversation', ...auth, (req, res, ne
 router.get('/tickets/:ticketId', ...auth, async (req, res, next) => {
   try {
     const ticket = await svc.getTicket(req.params.ticketId, req.params.workspaceId);
+    if (!ticket) return res.status(404).json({ error: 'Ticket não encontrado' });
+
+    // Verifica se o usuário tem acesso ao board (via membership ou workspace admin)
+    const boardRole = await svc.getBoardMemberRole(ticket.board_id, req.user.sub);
+    if (!boardRole && req.workspaceRole !== 'admin' && !['owner','admin'].includes(req.orgRole)) {
+      return res.status(403).json({ error: 'Sem acesso a este board' });
+    }
     res.json(ticket);
   } catch (err) { next(err); }
 });
 
 router.put('/tickets/:ticketId', ...auth, async (req, res, next) => {
   try {
+    // Verifica se o usuário pode editar (precisa ser pelo menos member no board)
+    const existing = await svc.getTicket(req.params.ticketId, req.params.workspaceId);
+    if (!existing) return res.status(404).json({ error: 'Ticket não encontrado' });
+
+    const boardRole = await svc.getBoardMemberRole(existing.board_id, req.user.sub);
+    const isAdmin   = req.workspaceRole === 'admin' || ['owner','admin'].includes(req.orgRole);
+    if (!isAdmin && boardRole === 'viewer') {
+      return res.status(403).json({ error: 'Você não tem permissão para editar tickets neste board' });
+    }
+    if (!isAdmin && !boardRole) {
+      return res.status(403).json({ error: 'Sem acesso a este board' });
+    }
+
     const ticket = await svc.updateTicket(req.params.ticketId, req.params.workspaceId, req.body);
     req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('ticket:updated', ticket);
     res.json(ticket);
@@ -201,6 +221,15 @@ router.put('/tickets/:ticketId', ...auth, async (req, res, next) => {
 
 router.delete('/tickets/:ticketId', ...auth, async (req, res, next) => {
   try {
+    const existing = await svc.getTicket(req.params.ticketId, req.params.workspaceId);
+    if (!existing) return res.status(404).json({ error: 'Ticket não encontrado' });
+
+    const boardRole = await svc.getBoardMemberRole(existing.board_id, req.user.sub);
+    const isAdmin   = req.workspaceRole === 'admin' || ['owner','admin'].includes(req.orgRole);
+    if (!isAdmin && (!boardRole || boardRole === 'viewer')) {
+      return res.status(403).json({ error: 'Sem permissão para excluir este ticket' });
+    }
+
     await svc.deleteTicket(req.params.ticketId, req.params.workspaceId);
     res.json({ ok: true });
   } catch (err) { next(err); }

@@ -13,24 +13,24 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import type { Workspace } from '@/types';
 
-const navItems = [
-  { href: '/dashboard',               icon: Home,          label: 'Início' },
-  { href: '/dashboard/conversations', icon: MessageSquare, label: 'Conversas' },
-  { href: '/dashboard/contacts',      icon: Users,         label: 'Contatos' },
-  { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil' },
-  { href: '/dashboard/tickets',       icon: Ticket,        label: 'Tickets' },
-  { href: '/dashboard/inboxes',       icon: Inbox,         label: 'Inboxes' },
-  { href: '/dashboard/members',       icon: Users,         label: 'Agentes' },
-  { href: '/dashboard/departments',   icon: LayoutList,    label: 'Departamentos' },
-  { href: '/dashboard/canned',        icon: BookMarked,    label: 'Respostas Prontas' },
-  { href: '/dashboard/labels',        icon: Tag,           label: 'Etiquetas' },
-  { href: '/dashboard/reports',       icon: BarChart2,     label: 'Relatórios' },
+const ALL_NAV_ITEMS = [
+  { href: '/dashboard',               icon: Home,          label: 'Início',            ticketsOnly: true  },
+  { href: '/dashboard/conversations', icon: MessageSquare, label: 'Conversas',         ticketsOnly: false },
+  { href: '/dashboard/contacts',      icon: Users,         label: 'Contatos',          ticketsOnly: false },
+  { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil',             ticketsOnly: false },
+  { href: '/dashboard/tickets',       icon: Ticket,        label: 'Tickets',           ticketsOnly: true  },
+  { href: '/dashboard/inboxes',       icon: Inbox,         label: 'Inboxes',           ticketsOnly: false },
+  { href: '/dashboard/members',       icon: Users,         label: 'Agentes',           ticketsOnly: false },
+  { href: '/dashboard/departments',   icon: LayoutList,    label: 'Departamentos',     ticketsOnly: false },
+  { href: '/dashboard/canned',        icon: BookMarked,    label: 'Respostas Prontas', ticketsOnly: false },
+  { href: '/dashboard/labels',        icon: Tag,           label: 'Etiquetas',         ticketsOnly: false },
+  { href: '/dashboard/reports',       icon: BarChart2,     label: 'Relatórios',        ticketsOnly: false },
 ];
 
 const bottomItems = [
-  { href: '/dashboard/org',      icon: Building2, label: 'Organização' },
-  { href: '/dashboard/settings', icon: Settings,  label: 'Configurações' },
-  { href: '/dashboard/profile',  icon: User,      label: 'Perfil' },
+  { href: '/dashboard/org',      icon: Building2, label: 'Organização', ticketsOnly: false },
+  { href: '/dashboard/settings', icon: Settings,  label: 'Configurações', ticketsOnly: false },
+  { href: '/dashboard/profile',  icon: User,      label: 'Perfil', ticketsOnly: true },
 ];
 
 export default function Sidebar() {
@@ -150,7 +150,9 @@ export default function Sidebar() {
 
       {/* Main nav */}
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ href, icon: Icon, label }) => (
+        {ALL_NAV_ITEMS
+          .filter(item => currentWorkspace?.role !== 'tickets_only' || item.ticketsOnly)
+          .map(({ href, icon: Icon, label }) => (
           <Link
             key={href}
             href={href}
@@ -169,7 +171,9 @@ export default function Sidebar() {
 
       {/* Bottom nav */}
       <div className="px-3 pb-2 space-y-0.5 border-t border-gray-800 pt-2">
-        {bottomItems.map(({ href, icon: Icon, label }) => (
+        {bottomItems
+          .filter(item => currentWorkspace?.role !== 'tickets_only' || item.ticketsOnly)
+          .map(({ href, icon: Icon, label }) => (
           <Link
             key={href}
             href={href}

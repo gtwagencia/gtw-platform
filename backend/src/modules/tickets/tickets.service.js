@@ -206,6 +206,14 @@ async function updateBoardMemberRole(boardId, userId, role) {
   return r.rows[0];
 }
 
+async function getBoardMemberRole(boardId, userId) {
+  const r = await query(
+    `SELECT role FROM ticket_board_members WHERE board_id = $1 AND user_id = $2`,
+    [boardId, userId]
+  );
+  return r.rows[0]?.role || null; // null = não é membro
+}
+
 async function removeBoardMember(boardId, userId) {
   await query(
     `DELETE FROM ticket_board_members WHERE board_id = $1 AND user_id = $2`,
@@ -750,6 +758,7 @@ module.exports = {
   updateBoardMemberRole,
   removeBoardMember,
   getBoardRole,
+  getBoardMemberRole,
   createColumn,
   updateColumn,
   reorderColumns,

@@ -156,7 +156,7 @@ export default function MyTasksPage() {
             )}
 
             {/* Labels */}
-            {ticket.labels.map(l => (
+            {(ticket.labels ?? []).map(l => (
               <span key={l.id} className="text-xs px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: l.color }}>
                 {l.name}
               </span>

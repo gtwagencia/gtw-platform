@@ -16,8 +16,9 @@ interface Member {
 }
 
 const ROLES = [
-  { value: 'admin',  label: 'Admin',  icon: Shield },
-  { value: 'agent',  label: 'Agente', icon: User },
+  { value: 'admin',        label: 'Admin',          icon: Shield },
+  { value: 'agent',        label: 'Agente',         icon: User },
+  { value: 'tickets_only', label: 'Somente Tickets', icon: UserCheck },
 ];
 
 export default function MembersPage() {

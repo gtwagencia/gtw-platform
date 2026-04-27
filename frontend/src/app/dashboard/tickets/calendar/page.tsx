@@ -189,7 +189,7 @@ export default function TicketCalendarPage() {
                   </div>
                   {t.assignee_name && (
                     <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-xs font-medium flex-shrink-0">
-                      {t.assignee_name[0]?.toUpperCase()}
+                      {t.assignee_name?.[0]?.toUpperCase()}
                     </div>
                   )}
                   <span className={clsx('text-xs px-1.5 py-0.5 rounded font-medium', PRIORITY_COLORS[t.priority])}>

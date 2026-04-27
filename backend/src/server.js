@@ -16,6 +16,7 @@ const { ensureBucket } = require('./services/storage.service');
 const logger           = require('./utils/logger');
 const { startJobs }    = require('./jobs/followUp.job');
 
+const { requireNotTicketsOnly } = require('./middleware/workspaceContext');
 const authRouter          = require('./modules/auth/auth.router');
 const orgsRouter          = require('./modules/organizations/organizations.router');
 const workspacesRouter    = require('./modules/workspaces/workspaces.router');
@@ -78,17 +79,18 @@ app.use(/\/conversations\/.*\/csat/,      csatLimiter);
 app.use('/api/v1/auth',                                    authRouter);
 app.use('/api/v1/orgs',                                    orgsRouter);
 app.use('/api/v1/orgs/:orgId/workspaces',                  workspacesRouter);
-app.use('/api/v1/workspaces/:workspaceId/inboxes',         inboxesRouter);
-app.use('/api/v1/workspaces/:workspaceId/contacts',        contactsRouter);
-app.use('/api/v1/workspaces/:workspaceId/conversations',   conversationsRouter);
-app.use('/api/v1/workspaces/:workspaceId/kanban',          kanbanRouter);
-app.use('/api/v1/workspaces/:workspaceId/tickets',        ticketsRouter);
-app.use('/api/v1/workspaces/:workspaceId/pipelines',       pipelinesRouter);
-app.use('/api/v1/workspaces/:workspaceId/departments',     departmentsRouter);
-app.use('/api/v1/workspaces/:workspaceId/canned',          cannedRouter);
-app.use('/api/v1/workspaces/:workspaceId/labels',          labelsRouter);
-app.use('/api/v1/workspaces/:workspaceId/reports',         reportsRouter);
-app.use('/api/v1/workspaces/:workspaceId/templates',       templatesRouter);
+// Rotas bloqueadas para tickets_only — o middleware verifica o role após workspaceContext
+app.use('/api/v1/workspaces/:workspaceId/inboxes',         requireNotTicketsOnly, inboxesRouter);
+app.use('/api/v1/workspaces/:workspaceId/contacts',        requireNotTicketsOnly, contactsRouter);
+app.use('/api/v1/workspaces/:workspaceId/conversations',   requireNotTicketsOnly, conversationsRouter);
+app.use('/api/v1/workspaces/:workspaceId/kanban',          requireNotTicketsOnly, kanbanRouter);
+app.use('/api/v1/workspaces/:workspaceId/tickets',         ticketsRouter);   // permitido
+app.use('/api/v1/workspaces/:workspaceId/pipelines',       requireNotTicketsOnly, pipelinesRouter);
+app.use('/api/v1/workspaces/:workspaceId/departments',     requireNotTicketsOnly, departmentsRouter);
+app.use('/api/v1/workspaces/:workspaceId/canned',          requireNotTicketsOnly, cannedRouter);
+app.use('/api/v1/workspaces/:workspaceId/labels',          requireNotTicketsOnly, labelsRouter);
+app.use('/api/v1/workspaces/:workspaceId/reports',         requireNotTicketsOnly, reportsRouter);
+app.use('/api/v1/workspaces/:workspaceId/templates',       requireNotTicketsOnly, templatesRouter);
 app.use('/api/v1/uploads',                                 uploadsRouter);
 app.use('/api/v1/conversations/:conversationId/messages',  messagesRouter);
 app.use('/api/v1/webhooks',                                webhooksRouter);

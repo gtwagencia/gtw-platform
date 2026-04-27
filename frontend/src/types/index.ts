@@ -61,6 +61,7 @@ export interface Workspace {
   ai_analysis_enabled: boolean;
   ai_ignore_groups: boolean;
   ai_provider: string | null;
+  role?: string; // workspace_memberships.role do usuário atual (ausente para owners/admins)
   ai_model: string | null;
   has_anthropic_key: boolean;
   has_openai_key: boolean;

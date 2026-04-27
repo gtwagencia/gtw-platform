@@ -286,7 +286,7 @@ export default function TicketsReportsPage() {
                             <td className="px-5 py-3.5">
                               <div className="flex items-center gap-2.5">
                                 <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-xs font-semibold flex-shrink-0">
-                                  {r.user_name[0]?.toUpperCase()}
+                                  {r.user_name?.[0]?.toUpperCase() ?? '?'}
                                 </div>
                                 <span className="font-medium text-gray-900">{r.user_name}</span>
                               </div>
