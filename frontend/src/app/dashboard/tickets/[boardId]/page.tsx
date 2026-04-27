@@ -582,7 +582,7 @@ function TicketCard({ ticket, isDragging, onClick }: { ticket: Ticket; isDraggin
 function ManageMembersModal({ board, workspaceId, onClose }: { board: TicketBoard; workspaceId: string; onClose: () => void }) {
   const { currentWorkspace } = useAuth();
   const [members, setMembers] = useState<TicketBoardMember[]>([]);
-  const [wsMembers, setWsMembers] = useState<Array<{ id: string; name: string; email: string; avatar_url: string | null }>>([]);
+  const [wsMembers, setWsMembers] = useState<Array<{ user_id: string; name: string; email: string; avatar_url: string | null }>>([]);
   const [addUserId, setAddUserId] = useState('');
   const [addRole, setAddRole] = useState('member');
 
@@ -622,8 +622,8 @@ function ManageMembersModal({ board, workspaceId, onClose }: { board: TicketBoar
         <div className="flex gap-2 mb-4">
           <select value={addUserId} onChange={e => setAddUserId(e.target.value)} className="input flex-1 text-sm">
             <option value="">Selecionar membro...</option>
-            {wsMembers.filter(m => !members.find(bm => bm.user_id === m.id)).map(m => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+            {wsMembers.filter(m => !members.find(bm => bm.user_id === m.user_id)).map(m => (
+              <option key={m.user_id} value={m.user_id}>{m.name}</option>
             ))}
           </select>
           <select value={addRole} onChange={e => setAddRole(e.target.value)} className="input text-sm">
