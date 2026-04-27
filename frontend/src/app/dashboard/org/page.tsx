@@ -9,7 +9,7 @@ import api from '@/lib/api';
 import type { Workspace } from '@/types';
 import {
   Users, Building2, Plus, Trash2, Shield,
-  Crown, User, Mail, Check, X, Loader,
+  Crown, User, Mail, Check, X, Loader, Lock,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -50,13 +50,29 @@ export default function OrgPage() {
 
   const canManage = currentOrg?.role === 'owner' || currentOrg?.role === 'admin';
 
+  // Bloqueia acesso de não-admins à página
+  if (currentOrg && !canManage) {
+    return (
+      <>
+        <Header title="Organização" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
+          <Shield className="w-10 h-10 text-gray-300" />
+          <p className="text-gray-500 text-sm">Você não tem permissão para acessar esta página.</p>
+        </div>
+      </>
+    );
+  }
+
   const loadMembers = useCallback(async () => {
-    if (!currentOrg) return;
+    if (!currentOrg || !canManage) return;
     setLoading(true);
-    const { data } = await api.get(`/orgs/${currentOrg.id}/members`);
-    setMembers(data);
-    setLoading(false);
-  }, [currentOrg]);
+    try {
+      const { data } = await api.get(`/orgs/${currentOrg.id}/members`);
+      setMembers(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentOrg, canManage]);
 
   useEffect(() => {
     loadMembers();

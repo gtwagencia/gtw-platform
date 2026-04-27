@@ -13,24 +13,26 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import type { Workspace } from '@/types';
 
+// adminOnly: visível apenas para owners/admins de org ou workspace admins
+// ticketsOnly: falso = oculto para perfil tickets_only
 const ALL_NAV_ITEMS = [
-  { href: '/dashboard',               icon: Home,          label: 'Início',            ticketsOnly: true  },
-  { href: '/dashboard/conversations', icon: MessageSquare, label: 'Conversas',         ticketsOnly: false },
-  { href: '/dashboard/contacts',      icon: Users,         label: 'Contatos',          ticketsOnly: false },
-  { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil',             ticketsOnly: false },
-  { href: '/dashboard/tickets',       icon: Ticket,        label: 'Tickets',           ticketsOnly: true  },
-  { href: '/dashboard/inboxes',       icon: Inbox,         label: 'Inboxes',           ticketsOnly: false },
-  { href: '/dashboard/members',       icon: Users,         label: 'Agentes',           ticketsOnly: false },
-  { href: '/dashboard/departments',   icon: LayoutList,    label: 'Departamentos',     ticketsOnly: false },
-  { href: '/dashboard/canned',        icon: BookMarked,    label: 'Respostas Prontas', ticketsOnly: false },
-  { href: '/dashboard/labels',        icon: Tag,           label: 'Etiquetas',         ticketsOnly: false },
-  { href: '/dashboard/reports',       icon: BarChart2,     label: 'Relatórios',        ticketsOnly: false },
+  { href: '/dashboard',               icon: Home,          label: 'Início',            ticketsOnly: true,  adminOnly: false },
+  { href: '/dashboard/conversations', icon: MessageSquare, label: 'Conversas',         ticketsOnly: false, adminOnly: false },
+  { href: '/dashboard/contacts',      icon: Users,         label: 'Contatos',          ticketsOnly: false, adminOnly: false },
+  { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil',             ticketsOnly: false, adminOnly: false },
+  { href: '/dashboard/tickets',       icon: Ticket,        label: 'Tickets',           ticketsOnly: true,  adminOnly: false },
+  { href: '/dashboard/inboxes',       icon: Inbox,         label: 'Inboxes',           ticketsOnly: false, adminOnly: true  },
+  { href: '/dashboard/members',       icon: Users,         label: 'Agentes',           ticketsOnly: false, adminOnly: true  },
+  { href: '/dashboard/departments',   icon: LayoutList,    label: 'Departamentos',     ticketsOnly: false, adminOnly: true  },
+  { href: '/dashboard/canned',        icon: BookMarked,    label: 'Respostas Prontas', ticketsOnly: false, adminOnly: true  },
+  { href: '/dashboard/labels',        icon: Tag,           label: 'Etiquetas',         ticketsOnly: false, adminOnly: true  },
+  { href: '/dashboard/reports',       icon: BarChart2,     label: 'Relatórios',        ticketsOnly: false, adminOnly: true  },
 ];
 
 const bottomItems = [
-  { href: '/dashboard/org',      icon: Building2, label: 'Organização', ticketsOnly: false },
-  { href: '/dashboard/settings', icon: Settings,  label: 'Configurações', ticketsOnly: false },
-  { href: '/dashboard/profile',  icon: User,      label: 'Perfil', ticketsOnly: true },
+  { href: '/dashboard/org',      icon: Building2, label: 'Organização',   ticketsOnly: false, adminOnly: true  },
+  { href: '/dashboard/settings', icon: Settings,  label: 'Configurações', ticketsOnly: false, adminOnly: true  },
+  { href: '/dashboard/profile',  icon: User,      label: 'Perfil',        ticketsOnly: true,  adminOnly: false },
 ];
 
 export default function Sidebar() {
@@ -41,6 +43,14 @@ export default function Sidebar() {
 
   const [wsOpen, setWsOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
+
+  // Um usuário é "admin" se for owner/admin da org, ou admin do workspace,
+  // ou se não tiver workspace role definido (org admins não têm row na memberships).
+  const isAdmin = user?.is_super_admin
+    || currentOrg?.role === 'owner'
+    || currentOrg?.role === 'admin'
+    || currentWorkspace?.role === 'admin'
+    || currentWorkspace?.role === undefined; // org owners não têm role na membership
 
   useEffect(() => {
     if (currentOrg) fetchForOrg(currentOrg.id);
@@ -152,6 +162,7 @@ export default function Sidebar() {
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
         {ALL_NAV_ITEMS
           .filter(item => currentWorkspace?.role !== 'tickets_only' || item.ticketsOnly)
+          .filter(item => !item.adminOnly || isAdmin)
           .map(({ href, icon: Icon, label }) => (
           <Link
             key={href}
@@ -173,6 +184,7 @@ export default function Sidebar() {
       <div className="px-3 pb-2 space-y-0.5 border-t border-gray-800 pt-2">
         {bottomItems
           .filter(item => currentWorkspace?.role !== 'tickets_only' || item.ticketsOnly)
+          .filter(item => !item.adminOnly || isAdmin)
           .map(({ href, icon: Icon, label }) => (
           <Link
             key={href}

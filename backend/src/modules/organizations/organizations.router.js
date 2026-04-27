@@ -34,7 +34,7 @@ router.put('/:orgId', authenticate, orgContext, requireOrgRole('owner'), async (
 
 // ── Members ────────────────────────────────────────────────────────────────
 
-router.get('/:orgId/members', authenticate, orgContext, async (req, res, next) => {
+router.get('/:orgId/members', authenticate, orgContext, requireOrgRole('owner', 'admin'), async (req, res, next) => {
   try {
     const members = await svc.listMembers(req.params.orgId);
     res.json(members);
