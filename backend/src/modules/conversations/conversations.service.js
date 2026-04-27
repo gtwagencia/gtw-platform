@@ -1,16 +1,33 @@
 'use strict';
 
-const { query } = require('../../config/database');
+const { query }    = require('../../config/database');
+const inboxesSvc   = require('../inboxes/inboxes.service');
 
-function buildVisibilityClause(params, { isSuperAdmin, orgRole, workspaceRole, userId }) {
+async function buildVisibilityClause(params, { isSuperAdmin, orgRole, workspaceRole, userId, workspaceId }) {
   const isAdmin = isSuperAdmin
     || ['owner', 'admin'].includes(orgRole)
     || workspaceRole === 'admin';
 
   if (isAdmin) return '';
 
+  // Verifica se o agente tem inboxes vinculados
+  const inboxIds = workspaceId ? await inboxesSvc.getUserInboxIds(userId, workspaceId) : [];
+
   params.push(userId);
-  return `AND (c.assignee_id = $${params.length} OR c.assignee_id IS NULL)`;
+  const userIdx = params.length;
+
+  if (inboxIds.length > 0) {
+    // Agente vinculado a inboxes específicos:
+    // vê conversas atribuídas a ele OU não atribuídas nos seus inboxes
+    params.push(inboxIds);
+    return `AND (
+      c.assignee_id = $${userIdx}
+      OR (c.assignee_id IS NULL AND c.inbox_id = ANY($${params.length}))
+    )`;
+  }
+
+  // Agente sem vínculo de inbox: vê atribuídas a ele + não atribuídas do workspace
+  return `AND (c.assignee_id = $${userIdx} OR c.assignee_id IS NULL)`;
 }
 
 async function list(workspaceId, filters = {}, caller = {}) {
@@ -31,7 +48,7 @@ async function list(workspaceId, filters = {}, caller = {}) {
   }
 
   const where      = 'WHERE ' + conds.join(' AND ');
-  const visibility = buildVisibilityClause(params, caller);
+  const visibility = await buildVisibilityClause(params, { ...caller, workspaceId });
 
   const countRes = await query(
     `SELECT COUNT(*) FROM conversations c ${where} ${visibility}`, params
@@ -72,7 +89,7 @@ async function list(workspaceId, filters = {}, caller = {}) {
 
 async function getById(conversationId, workspaceId, caller = {}) {
   const params = [conversationId, workspaceId];
-  const visibility = buildVisibilityClause(params, caller);
+  const visibility = await buildVisibilityClause(params, { ...caller, workspaceId });
 
   const r = await query(
     `SELECT c.*,

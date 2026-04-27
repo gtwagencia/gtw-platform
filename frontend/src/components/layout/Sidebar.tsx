@@ -19,7 +19,7 @@ const ALL_NAV_ITEMS = [
   { href: '/dashboard',               icon: Home,          label: 'Início',            ticketsOnly: true,  adminOnly: false },
   { href: '/dashboard/conversations', icon: MessageSquare, label: 'Conversas',         ticketsOnly: false, adminOnly: false },
   { href: '/dashboard/contacts',      icon: Users,         label: 'Contatos',          ticketsOnly: false, adminOnly: false },
-  { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil',             ticketsOnly: false, adminOnly: false },
+  { href: '/dashboard/kanban',        icon: Kanban,        label: 'Funil',             ticketsOnly: false, adminOnly: true  },
   { href: '/dashboard/tickets',       icon: Ticket,        label: 'Tickets',           ticketsOnly: true,  adminOnly: false },
   { href: '/dashboard/inboxes',       icon: Inbox,         label: 'Inboxes',           ticketsOnly: false, adminOnly: true  },
   { href: '/dashboard/members',       icon: Users,         label: 'Agentes',           ticketsOnly: false, adminOnly: true  },

@@ -87,4 +87,61 @@ async function remove(inboxId, workspaceId) {
   if (!r.rows.length) throw Object.assign(new Error('Inbox não encontrado'), { status: 404 });
 }
 
-module.exports = { list, getById, create, update, remove };
+// ── Inbox Memberships ──────────────────────────────────────────────────────
+
+async function listMembers(inboxId, workspaceId) {
+  const r = await query(
+    `SELECT im.user_id, im.created_at AS joined_at,
+            u.name, u.email, u.avatar_url,
+            wm.role AS workspace_role
+     FROM inbox_memberships im
+     JOIN users u ON u.id = im.user_id
+     LEFT JOIN workspace_memberships wm ON wm.user_id = im.user_id AND wm.workspace_id = $2
+     WHERE im.inbox_id = $1
+     ORDER BY u.name`,
+    [inboxId, workspaceId]
+  );
+  return r.rows;
+}
+
+async function addMember(inboxId, userId, workspaceId) {
+  // Verifica que o usuário é membro do workspace
+  const check = await query(
+    'SELECT 1 FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+    [workspaceId, userId]
+  );
+  if (!check.rows.length) throw Object.assign(new Error('Usuário não é membro deste workspace'), { status: 400 });
+
+  await query(
+    'INSERT INTO inbox_memberships (inbox_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+    [inboxId, userId]
+  );
+  const r = await query(
+    `SELECT im.user_id, u.name, u.email, u.avatar_url
+     FROM inbox_memberships im JOIN users u ON u.id = im.user_id
+     WHERE im.inbox_id = $1 AND im.user_id = $2`,
+    [inboxId, userId]
+  );
+  return r.rows[0];
+}
+
+async function removeMember(inboxId, userId) {
+  await query(
+    'DELETE FROM inbox_memberships WHERE inbox_id = $1 AND user_id = $2',
+    [inboxId, userId]
+  );
+}
+
+// Retorna os inbox_ids vinculados a um usuário num workspace
+async function getUserInboxIds(userId, workspaceId) {
+  const r = await query(
+    `SELECT im.inbox_id
+     FROM inbox_memberships im
+     JOIN inboxes i ON i.id = im.inbox_id
+     WHERE im.user_id = $1 AND i.workspace_id = $2`,
+    [userId, workspaceId]
+  );
+  return r.rows.map(row => row.inbox_id);
+}
+
+module.exports = { list, getById, create, update, remove, listMembers, addMember, removeMember, getUserInboxIds };
