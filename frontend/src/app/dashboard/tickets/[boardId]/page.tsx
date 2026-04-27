@@ -638,7 +638,7 @@ function ManageMembersModal({ board, workspaceId, onClose }: { board: TicketBoar
           {members.map(m => (
             <div key={m.user_id} className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-sm font-medium flex-shrink-0">
-                {m.name[0]?.toUpperCase()}
+                {m.name?.[0]?.toUpperCase() ?? '?'}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{m.name}</p>

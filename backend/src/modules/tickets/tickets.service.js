@@ -180,11 +180,19 @@ async function listBoardMembers(boardId) {
 }
 
 async function addBoardMember(boardId, userId, role = 'member') {
-  const r = await query(
+  await query(
     `INSERT INTO ticket_board_members (board_id, user_id, role) VALUES ($1,$2,$3)
-     ON CONFLICT (board_id, user_id) DO UPDATE SET role = $3
-     RETURNING *`,
+     ON CONFLICT (board_id, user_id) DO UPDATE SET role = $3`,
     [boardId, userId, role]
+  );
+  // Retorna com dados do usuário para o frontend não quebrar ao acessar .name
+  const r = await query(
+    `SELECT tbm.user_id, tbm.role, tbm.board_id,
+            u.name, u.email, u.avatar_url
+     FROM ticket_board_members tbm
+     JOIN users u ON u.id = tbm.user_id
+     WHERE tbm.board_id = $1 AND tbm.user_id = $2`,
+    [boardId, userId]
   );
   return r.rows[0];
 }
