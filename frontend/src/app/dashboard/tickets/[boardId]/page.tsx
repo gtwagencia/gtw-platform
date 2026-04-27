@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { getSocket } from '@/lib/socket';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useAuth } from '@/store/auth';
 import Header from '@/components/layout/Header';
@@ -745,6 +746,110 @@ export default function BoardPage() {
     api.get<TicketLabel[]>(`/workspaces/${currentWorkspace.id}/tickets/labels`).then(r => setLabels(r.data)).catch(() => {});
     api.get<TicketBoardMember[]>(`/workspaces/${currentWorkspace.id}/tickets/boards/${boardId}/members`).then(r => setMembers(r.data)).catch(() => {});
   }, [currentWorkspace, boardId]);
+
+  // ── Socket: sincronização em tempo real do board ──────────────────────────
+  useEffect(() => {
+    if (!currentWorkspace || !user) return;
+    const socket = getSocket();
+    const myId = user.id;
+
+    function forThisBoard(data: any) { return data?.board_id === boardId || data?.boardId === boardId; }
+
+    // Ticket criado por outro usuário
+    socket.on('ticket:created', (data: any) => {
+      if (data._userId === myId || !forThisBoard(data)) return;
+      setBoard(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          columns: prev.columns.map(col =>
+            col.id === data.column_id
+              ? { ...col, tickets: [...col.tickets, { ...data, labels: data.labels ?? [] }] }
+              : col
+          ),
+        };
+      });
+    });
+
+    // Ticket atualizado/movido por outro usuário
+    socket.on('ticket:updated', (data: any) => {
+      if (data._userId === myId || !forThisBoard(data)) return;
+      setBoard(prev => {
+        if (!prev) return prev;
+        // Remove o ticket de todas as colunas e insere na coluna correta
+        const withoutTicket = prev.columns.map(col => ({
+          ...col,
+          tickets: col.tickets.filter(t => t.id !== data.id),
+        }));
+        return {
+          ...prev,
+          columns: withoutTicket.map(col =>
+            col.id === data.column_id
+              ? { ...col, tickets: [...col.tickets, { ...data, labels: data.labels ?? [] }] }
+              : col
+          ),
+        };
+      });
+    });
+
+    // Ticket excluído
+    socket.on('ticket:deleted', (data: any) => {
+      if (data._userId === myId || !forThisBoard(data)) return;
+      setBoard(prev => prev ? {
+        ...prev,
+        columns: prev.columns.map(col => ({
+          ...col,
+          tickets: col.tickets.filter(t => t.id !== data.ticketId),
+        })),
+      } : prev);
+    });
+
+    // Coluna criada
+    socket.on('column:created', (data: any) => {
+      if (data._userId === myId || !forThisBoard(data)) return;
+      setBoard(prev => prev ? { ...prev, columns: [...prev.columns, { ...data, tickets: [] }] } : prev);
+    });
+
+    // Coluna atualizada (rename, cor, isDone)
+    socket.on('column:updated', (data: any) => {
+      if (data._userId === myId || !forThisBoard(data)) return;
+      setBoard(prev => prev ? {
+        ...prev,
+        columns: prev.columns.map(col => col.id === data.id ? { ...col, ...data } : col),
+      } : prev);
+    });
+
+    // Coluna excluída
+    socket.on('column:deleted', (data: any) => {
+      if (data._userId === myId || !forThisBoard(data)) return;
+      setBoard(prev => prev ? {
+        ...prev,
+        columns: prev.columns.filter(col => col.id !== data.columnId),
+      } : prev);
+    });
+
+    // Colunas reordenadas
+    socket.on('columns:reordered', (data: any) => {
+      if (data._userId === myId || !forThisBoard(data)) return;
+      setBoard(prev => {
+        if (!prev) return prev;
+        const ordered = (data.orderedIds as string[])
+          .map(id => prev.columns.find(c => c.id === id))
+          .filter(Boolean) as typeof prev.columns;
+        return { ...prev, columns: ordered };
+      });
+    });
+
+    return () => {
+      socket.off('ticket:created');
+      socket.off('ticket:updated');
+      socket.off('ticket:deleted');
+      socket.off('column:created');
+      socket.off('column:updated');
+      socket.off('column:deleted');
+      socket.off('columns:reordered');
+    };
+  }, [currentWorkspace, boardId, user]);
 
   // Close col menu on outside click
   useEffect(() => {

@@ -146,6 +146,9 @@ router.post('/boards/:boardId/columns', ...auth, (req, res, next) => requireBoar
     const { name, color, position, isDone } = req.body;
     if (!name) return res.status(400).json({ error: 'name é obrigatório' });
     const col = await svc.createColumn(req.params.boardId, { name, color, position, isDone });
+    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('column:created', {
+      ...col, boardId: req.params.boardId, _userId: req.user.sub,
+    });
     res.status(201).json(col);
   } catch (err) { next(err); }
 });
@@ -155,6 +158,9 @@ router.put('/boards/:boardId/columns/reorder', ...auth, (req, res, next) => requ
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds deve ser array' });
     await svc.reorderColumns(req.params.boardId, orderedIds);
+    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('columns:reordered', {
+      boardId: req.params.boardId, orderedIds, _userId: req.user.sub,
+    });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
@@ -162,6 +168,9 @@ router.put('/boards/:boardId/columns/reorder', ...auth, (req, res, next) => requ
 router.put('/boards/:boardId/columns/:columnId', ...auth, (req, res, next) => requireBoardAccess(req, res, next, true), async (req, res, next) => {
   try {
     const col = await svc.updateColumn(req.params.columnId, req.params.boardId, req.body);
+    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('column:updated', {
+      ...col, boardId: req.params.boardId, _userId: req.user.sub,
+    });
     res.json(col);
   } catch (err) { next(err); }
 });
@@ -169,6 +178,9 @@ router.put('/boards/:boardId/columns/:columnId', ...auth, (req, res, next) => re
 router.delete('/boards/:boardId/columns/:columnId', ...auth, (req, res, next) => requireBoardAccess(req, res, next, true), async (req, res, next) => {
   try {
     await svc.deleteColumn(req.params.columnId, req.params.boardId);
+    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('column:deleted', {
+      columnId: req.params.columnId, boardId: req.params.boardId, _userId: req.user.sub,
+    });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
@@ -180,7 +192,7 @@ router.post('/boards/:boardId/tickets', ...auth, (req, res, next) => requireBoar
     const { columnId, title } = req.body;
     if (!columnId || !title) return res.status(400).json({ error: 'columnId e title são obrigatórios' });
     const ticket = await svc.createTicket(req.params.boardId, req.user.sub, req.body);
-    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('ticket:created', ticket);
+    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('ticket:created', { ...ticket, _userId: req.user.sub });
     res.status(201).json(ticket);
   } catch (err) { next(err); }
 });
@@ -228,7 +240,7 @@ router.put('/tickets/:ticketId', ...auth, async (req, res, next) => {
     }
 
     const ticket = await svc.updateTicket(req.params.ticketId, req.params.workspaceId, req.body);
-    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('ticket:updated', ticket);
+    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('ticket:updated', { ...ticket, _userId: req.user.sub });
     res.json(ticket);
   } catch (err) { next(err); }
 });
@@ -244,7 +256,11 @@ router.delete('/tickets/:ticketId', ...auth, async (req, res, next) => {
       return res.status(403).json({ error: 'Sem permissão para excluir este ticket' });
     }
 
+    const boardId = existing.board_id;
     await svc.deleteTicket(req.params.ticketId, req.params.workspaceId);
+    req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('ticket:deleted', {
+      ticketId: req.params.ticketId, boardId, _userId: req.user.sub,
+    });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
