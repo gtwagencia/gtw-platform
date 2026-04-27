@@ -106,4 +106,14 @@ router.delete('/:workspaceId/members/:userId', authenticate, orgContext, workspa
   } catch (err) { next(err); }
 });
 
+router.post('/:workspaceId/members/:userId/reset-password', authenticate, orgContext, workspaceContext, async (req, res, next) => {
+  try {
+    if (req.workspaceRole !== 'admin' && !['owner', 'admin'].includes(req.orgRole) && !req.user.isSuperAdmin) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+    const result = await svc.resetMemberPassword(req.params.workspaceId, req.params.userId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

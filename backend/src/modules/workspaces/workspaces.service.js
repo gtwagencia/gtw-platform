@@ -174,6 +174,32 @@ async function removeMember(workspaceId, userId) {
   );
 }
 
+async function resetMemberPassword(workspaceId, userId) {
+  // Verifica se o usuário é membro deste workspace
+  const memberRes = await query(
+    `SELECT u.id, u.name, u.email
+     FROM workspace_memberships wm
+     JOIN users u ON u.id = wm.user_id
+     WHERE wm.workspace_id = $1 AND wm.user_id = $2`,
+    [workspaceId, userId]
+  );
+  if ( ! memberRes.rows.length) {
+    throw Object.assign(new Error('Membro não encontrado'), { status: 404 });
+  }
+
+  const tempPassword = crypto.randomBytes(6).toString('hex');
+  const hash         = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+
+  await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]);
+
+  return {
+    user_id:       userId,
+    name:          memberRes.rows[0].name,
+    email:         memberRes.rows[0].email,
+    temp_password: tempPassword,
+  };
+}
+
 async function updateMemberRole(workspaceId, userId, role) {
   const r = await query(
     `UPDATE workspace_memberships SET role = $1 WHERE workspace_id = $2 AND user_id = $3 RETURNING *`,
@@ -185,5 +211,5 @@ async function updateMemberRole(workspaceId, userId, role) {
 
 module.exports = {
   listForOrg, create, getById, update,
-  listMembers, addMember, removeMember, updateMemberRole,
+  listMembers, addMember, removeMember, updateMemberRole, resetMemberPassword,
 };

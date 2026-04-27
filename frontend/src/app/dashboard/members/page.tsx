@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/store/auth';
 import Header from '@/components/layout/Header';
 import api from '@/lib/api';
-import { Plus, Trash2, Shield, User, UserCheck } from 'lucide-react';
+import { Plus, Trash2, Shield, User, UserCheck, KeyRound } from 'lucide-react';
 
 interface Member {
   user_id: string;
@@ -30,6 +30,7 @@ export default function MembersPage() {
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
   const [tempPass,  setTempPass]  = useState<{email: string; password: string} | null>(null);
+  const [resetting, setResetting] = useState<string | null>(null); // userId sendo resetado
 
   const isManager = currentOrg?.role === 'owner' || currentOrg?.role === 'admin';
 
@@ -87,6 +88,20 @@ export default function MembersPage() {
       `/orgs/${currentOrg.id}/workspaces/${currentWorkspace.id}/members/${userId}`
     );
     load();
+  }
+
+  async function handleResetPassword(userId: string, email: string) {
+    if (!currentWorkspace || !currentOrg) return;
+    if (!confirm(`Redefinir a senha de ${email}? Uma nova senha temporária será gerada.`)) return;
+    setResetting(userId);
+    try {
+      const { data } = await api.post(
+        `/orgs/${currentOrg.id}/workspaces/${currentWorkspace.id}/members/${userId}/reset-password`
+      );
+      setTempPass({ email: data.email, password: data.temp_password });
+    } finally {
+      setResetting(null);
+    }
   }
 
   if (!currentWorkspace) {
@@ -213,12 +228,22 @@ export default function MembersPage() {
                   <span className="text-xs text-gray-500 capitalize">{m.role}</span>
                 )}
                 {isManager && (
-                  <button
-                    className="btn-ghost text-xs text-red-500 hover:bg-red-50 p-2"
-                    onClick={() => handleRemove(m.user_id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <>
+                    <button
+                      className="btn-ghost text-xs text-gray-400 hover:bg-gray-50 hover:text-gray-700 p-2"
+                      onClick={() => handleResetPassword(m.user_id, m.email)}
+                      title="Redefinir senha"
+                      disabled={resetting === m.user_id}
+                    >
+                      <KeyRound className="w-4 h-4" />
+                    </button>
+                    <button
+                      className="btn-ghost text-xs text-red-500 hover:bg-red-50 p-2"
+                      onClick={() => handleRemove(m.user_id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </>
                 )}
               </div>
             ))
