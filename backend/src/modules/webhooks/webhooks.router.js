@@ -301,24 +301,69 @@ async function handleGroupMessage(msg, inbox, io) {
 /**
  * Round-robin auto-assign: pick agent in the department with fewest open conversations.
  */
-async function autoAssignAgent(workspaceId, departmentId) {
-  const r = await query(
-    `SELECT wm.user_id,
-            COUNT(c.id)::int AS open_count
-     FROM workspace_memberships wm
-     LEFT JOIN conversations c
-       ON c.assignee_id = wm.user_id
-       AND c.workspace_id = $1
-       AND c.status = 'open'
-     WHERE wm.workspace_id = $1
-       AND wm.role = 'agent'
-       ${departmentId ? `AND wm.department_id = $2` : ''}
-     GROUP BY wm.user_id
-     ORDER BY open_count ASC, RANDOM()
-     LIMIT 1`,
-    departmentId ? [workspaceId, departmentId] : [workspaceId]
-  );
-  return r.rows[0]?.user_id || null;
+/**
+ * Round-robin: seleciona o agente com menos conversas abertas dentre
+ * os que pertencem ao inbox. Se o inbox não tiver membros vinculados,
+ * cai no pool do departamento (se houver). Se ainda assim não encontrar,
+ * retorna null — NÃO atribui a um agente aleatório de outro inbox.
+ */
+async function autoAssignAgent(workspaceId, inboxId, departmentId) {
+  // 1. Tenta agentes vinculados especificamente a este inbox
+  if (inboxId) {
+    const r = await query(
+      `SELECT im.user_id,
+              COUNT(c.id)::int AS open_count
+       FROM inbox_memberships im
+       JOIN workspace_memberships wm ON wm.user_id = im.user_id AND wm.workspace_id = $1
+       LEFT JOIN conversations c
+         ON c.assignee_id = im.user_id
+         AND c.workspace_id = $1
+         AND c.status = 'open'
+       WHERE im.inbox_id = $2
+         AND wm.role IN ('agent','admin','member')
+       GROUP BY im.user_id
+       ORDER BY open_count ASC, RANDOM()
+       LIMIT 1`,
+      [workspaceId, inboxId]
+    );
+    if (r.rows.length) return r.rows[0].user_id;
+
+    // Inbox tem membros definidos mas nenhum disponível → não atribui
+    // (verificar se o inbox realmente tem membros configurados)
+    const memberCount = await query(
+      'SELECT COUNT(*) FROM inbox_memberships WHERE inbox_id = $1',
+      [inboxId]
+    );
+    if (parseInt(memberCount.rows[0].count, 10) > 0) {
+      // Inbox tem membros mas todos estão ocupados → retorna null,
+      // não atribui para agente de outro inbox
+      return null;
+    }
+  }
+
+  // 2. Sem membros de inbox configurados: tenta departamento
+  if (departmentId) {
+    const r = await query(
+      `SELECT wm.user_id,
+              COUNT(c.id)::int AS open_count
+       FROM workspace_memberships wm
+       LEFT JOIN conversations c
+         ON c.assignee_id = wm.user_id
+         AND c.workspace_id = $1
+         AND c.status = 'open'
+       WHERE wm.workspace_id = $1
+         AND wm.role IN ('agent','member')
+         AND wm.department_id = $2
+       GROUP BY wm.user_id
+       ORDER BY open_count ASC, RANDOM()
+       LIMIT 1`,
+      [workspaceId, departmentId]
+    );
+    if (r.rows.length) return r.rows[0].user_id;
+  }
+
+  // 3. Nenhuma regra específica → não atribui automaticamente
+  return null;
 }
 
 // ── Main webhook endpoint ──────────────────────────────────────────────────
@@ -519,7 +564,7 @@ router.post('/evolution/:inboxId', async (req, res) => {
 
         // ── Auto-assign (round-robin) ─────────────────────────────────
         if (created && inbox.auto_assign && !conversation.assignee_id) {
-          const agentId = await autoAssignAgent(inbox.workspace_id, conversation.department_id);
+          const agentId = await autoAssignAgent(inbox.workspace_id, inbox.id, conversation.department_id);
           if (agentId) {
             await query(
               'UPDATE conversations SET assignee_id = $1 WHERE id = $2',
