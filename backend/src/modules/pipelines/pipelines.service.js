@@ -203,19 +203,46 @@ async function removePipeline(pipelineId, workspaceId) {
   const countRes = await query(
     `SELECT COUNT(*) FROM pipelines WHERE workspace_id = $1`, [workspaceId]
   );
-  if (parseInt(countRes.rows[0].count) <= 1) {
+  if (parseInt(countRes.rows[0].count, 10) <= 1) {
     throw Object.assign(new Error('Não é possível excluir o único funil do workspace'), { status: 400 });
   }
 
-  // Move deals to default pipeline before deleting
+  // Busca o pipeline padrão (destino dos deals)
   const defaultId = await getDefaultPipeline(workspaceId);
-  if (defaultId && defaultId !== pipelineId) {
-    await query(
-      `UPDATE deals SET pipeline_id = $1 WHERE pipeline_id = $2`,
-      [defaultId, pipelineId]
+  const targetId  = (defaultId && defaultId !== pipelineId) ? defaultId : null;
+
+  if (targetId) {
+    // Busca a primeira stage do pipeline destino
+    const stageRes = await query(
+      `SELECT id FROM kanban_stages WHERE pipeline_id = $1 ORDER BY position ASC LIMIT 1`,
+      [targetId]
     );
+    const targetStageId = stageRes.rows[0]?.id || null;
+
+    if (targetStageId) {
+      // Move deals: atualiza pipeline_id E stage_id para não violar FK
+      await query(
+        `UPDATE deals
+         SET pipeline_id = $1,
+             stage_id    = $2
+         WHERE stage_id IN (
+           SELECT id FROM kanban_stages WHERE pipeline_id = $3
+         )`,
+        [targetId, targetStageId, pipelineId]
+      );
+    } else {
+      // Pipeline destino não tem stages — apenas desvincula o pipeline_id
+      await query(
+        `UPDATE deals SET pipeline_id = $1 WHERE pipeline_id = $2`,
+        [targetId, pipelineId]
+      );
+    }
+  } else {
+    // Sem pipeline destino: desvincula deals (pipeline_id = NULL é permitido pelo schema)
+    await query(`UPDATE deals SET pipeline_id = NULL WHERE pipeline_id = $1`, [pipelineId]);
   }
 
+  // Deleta o pipeline (CASCADE remove kanban_stages automaticamente)
   await query(`DELETE FROM pipelines WHERE id = $1 AND workspace_id = $2`, [pipelineId, workspaceId]);
 }
 
