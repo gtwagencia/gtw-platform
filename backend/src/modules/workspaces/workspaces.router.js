@@ -78,7 +78,7 @@ router.post('/:workspaceId/members', authenticate, orgContext, workspaceContext,
     }
     const { email, role, name } = req.body;
     if (!email) return res.status(400).json({ error: 'email é obrigatório' });
-    const VALID_ROLES = ['admin', 'agent', 'member'];
+    const VALID_ROLES = ['admin', 'agent', 'member', 'tickets_only'];
     if (role && !VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `role inválido. Use: ${VALID_ROLES.join(', ')}` });
     }
@@ -90,7 +90,7 @@ router.post('/:workspaceId/members', authenticate, orgContext, workspaceContext,
 router.put('/:workspaceId/members/:userId/role', authenticate, orgContext, workspaceContext, async (req, res, next) => {
   try {
     const { role } = req.body;
-    const VALID_ROLES = ['admin', 'agent', 'member'];
+    const VALID_ROLES = ['admin', 'agent', 'member', 'tickets_only'];
     if (!role || !VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `role inválido. Use: ${VALID_ROLES.join(', ')}` });
     }
