@@ -42,13 +42,15 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   const [csatRating,    setCsatRating]    = useState(0);
   const [csatSent,      setCsatSent]      = useState(false);
   const [uploading,     setUploading]     = useState(false);
-  const [showTicket,    setShowTicket]    = useState(false);
-  const [ticketBoards,  setTicketBoards]  = useState<{ id: string; name: string; columns: { id: string; name: string }[] }[]>([]);
-  const [ticketBoardId, setTicketBoardId] = useState('');
-  const [ticketColId,   setTicketColId]   = useState('');
-  const [ticketTitle,   setTicketTitle]   = useState('');
-  const [ticketPriority,setTicketPriority]= useState('medium');
-  const [ticketSaving,  setTicketSaving]  = useState(false);
+  const [showTicket,     setShowTicket]     = useState(false);
+  const [ticketBoards,   setTicketBoards]   = useState<{ id: string; name: string; columns: { id: string; name: string }[] }[]>([]);
+  const [ticketBoardId,  setTicketBoardId]  = useState('');
+  const [ticketColId,    setTicketColId]    = useState('');
+  const [ticketTitle,    setTicketTitle]    = useState('');
+  const [ticketDesc,     setTicketDesc]     = useState('');
+  const [ticketPriority, setTicketPriority] = useState('medium');
+  const [ticketSaving,   setTicketSaving]   = useState(false);
+  const [hoveredMsgId,   setHoveredMsgId]   = useState<string | null>(null);
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const bottomRef       = useRef<HTMLDivElement>(null);
   const assignRef       = useRef<HTMLDivElement>(null);
@@ -229,9 +231,10 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     }
   }
 
-  async function openTicketModal() {
+  async function openTicketModal(prefillDesc = '') {
     if (!currentWorkspace) return;
     setTicketTitle(conversation.contact_name || '');
+    setTicketDesc(prefillDesc);
     setTicketBoardId('');
     setTicketColId('');
     setTicketPriority('medium');
@@ -276,6 +279,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
         contactName:    conversation.contact_name,
         columnId:       ticketColId || undefined,
         title:          ticketTitle || conversation.contact_name,
+        description:    ticketDesc || undefined,
         priority:       ticketPriority,
       });
       setShowTicket(false);
@@ -548,12 +552,32 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                     <div className="flex-1 h-px bg-gray-100" />
                   </div>
                 )}
-              <div className={clsx('flex flex-col', isOut ? 'items-end' : 'items-start')}>
+              <div
+                className={clsx('flex flex-col', isOut ? 'items-end' : 'items-start')}
+                onMouseEnter={() => setHoveredMsgId(msg.id)}
+                onMouseLeave={() => setHoveredMsgId(null)}
+              >
                 {showSender && (
                   <span className={clsx('text-xs font-medium mb-1 px-1', isMe ? 'text-brand-600' : 'text-purple-600')}>
                     {isMe ? 'Você' : msg.sender_name}
                   </span>
                 )}
+
+                {/* Botão "Criar ticket a partir desta mensagem" */}
+                {hoveredMsgId === msg.id && msg.content && msg.message_type === 'text' && (
+                  <button
+                    onClick={() => openTicketModal(msg.content)}
+                    className={clsx(
+                      'flex items-center gap-1 text-xs px-2 py-0.5 rounded mb-1 transition-colors',
+                      'bg-white border border-gray-200 text-gray-500 hover:text-brand-600 hover:border-brand-300 shadow-sm'
+                    )}
+                    title="Criar ticket a partir desta mensagem"
+                  >
+                    <Ticket className="w-3 h-3" />
+                    Criar ticket
+                  </button>
+                )}
+
                 <div className={clsx(
                   'max-w-xs lg:max-w-md xl:max-w-lg rounded-2xl px-4 py-2.5 text-sm shadow-sm',
                   isOut
@@ -658,6 +682,17 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                   value={ticketTitle}
                   onChange={e => setTicketTitle(e.target.value)}
                   placeholder="Título do ticket"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-700 mb-1 block">Descrição</label>
+                <textarea
+                  className="input w-full resize-none text-sm"
+                  rows={3}
+                  value={ticketDesc}
+                  onChange={e => setTicketDesc(e.target.value)}
+                  placeholder="Descreva o problema ou contexto..."
                 />
               </div>
 

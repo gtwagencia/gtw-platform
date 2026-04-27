@@ -200,11 +200,11 @@ router.post('/boards/:boardId/tickets', ...auth, (req, res, next) => requireBoar
 // Create ticket from conversation
 router.post('/boards/:boardId/tickets/from-conversation', ...auth, (req, res, next) => requireBoardAccess(req, res, next, false), async (req, res, next) => {
   try {
-    const { conversationId, contactId, contactName, columnId, assigneeId, priority, title } = req.body;
+    const { conversationId, contactId, contactName, columnId, assigneeId, priority, title, description } = req.body;
     if (!conversationId) return res.status(400).json({ error: 'conversationId é obrigatório' });
     const ticket = await svc.createTicketFromConversation(
       req.params.workspaceId, req.user.sub,
-      { boardId: req.params.boardId, columnId, conversationId, contactId, contactName, title, assigneeId, priority }
+      { boardId: req.params.boardId, columnId, conversationId, contactId, contactName, title, description, assigneeId, priority }
     );
     res.status(201).json(ticket);
   } catch (err) { next(err); }

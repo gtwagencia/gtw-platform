@@ -777,7 +777,7 @@ async function spawnDueRecurringTickets() {
 
 // ── Create ticket from WhatsApp conversation ──────────────────────────────────
 
-async function createTicketFromConversation(workspaceId, userId, { boardId, columnId, conversationId, contactId, contactName, title, assigneeId, priority }) {
+async function createTicketFromConversation(workspaceId, userId, { boardId, columnId, conversationId, contactId, contactName, title, description, assigneeId, priority }) {
   // Prevent duplicate
   const existing = await query(
     `SELECT t.id FROM tickets t
@@ -801,6 +801,7 @@ async function createTicketFromConversation(workspaceId, userId, { boardId, colu
   return createTicket(boardId, userId, {
     columnId: targetColumnId,
     title: title || contactName || 'Novo Ticket',
+    description: description || null,
     assigneeId,
     priority: priority || 'medium',
     conversationId,
