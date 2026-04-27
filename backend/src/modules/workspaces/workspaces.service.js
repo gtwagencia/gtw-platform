@@ -115,7 +115,7 @@ async function update(workspaceId, body) {
 
 async function listMembers(workspaceId) {
   const r = await query(
-    `SELECT u.id, u.name, u.email, u.avatar_url, wm.role, wm.created_at AS joined_at
+    `SELECT u.id AS user_id, u.name, u.email, u.avatar_url, wm.role, wm.created_at AS joined_at
      FROM workspace_memberships wm
      JOIN users u ON u.id = wm.user_id
      WHERE wm.workspace_id = $1

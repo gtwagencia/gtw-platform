@@ -108,23 +108,12 @@ router.delete('/:workspaceId/members/:userId', authenticate, orgContext, workspa
 
 router.post('/:workspaceId/members/:userId/reset-password', authenticate, orgContext, workspaceContext, async (req, res, next) => {
   try {
-    const logger = require('../../utils/logger');
-    logger.info('[reset-password] chamado', {
-      workspaceId: req.params.workspaceId,
-      userId:      req.params.userId,
-      orgRole:     req.orgRole,
-      wsRole:      req.workspaceRole,
-    });
-
     if (req.workspaceRole !== 'admin' && !['owner', 'admin'].includes(req.orgRole) && !req.user.isSuperAdmin) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
     const result = await svc.resetMemberPassword(req.params.workspaceId, req.params.userId);
     res.json(result);
-  } catch (err) {
-    require('../../utils/logger').error('[reset-password] erro', { message: err.message, stack: err.stack });
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
 module.exports = router;
