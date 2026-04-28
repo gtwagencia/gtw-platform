@@ -171,7 +171,7 @@ async function runAiAnalysis() {
          )
        )
      ORDER BY d.updated_at DESC
-     LIMIT 30`
+     LIMIT 50`
   );
 
   for (const deal of r.rows) {
@@ -261,10 +261,9 @@ function startJobs() {
     backfillAttending().catch(err => logger.error('Backfill attending error', { err: err.message }));
   });
 
-  // AI analysis — every hour
-  cron.schedule('0 * * * *', () => {
-    backfillAttending()  // garante estágio correto antes de analisar
-      .then(() => runAiAnalysis())
+  // AI analysis — every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    runAiAnalysis()
       .catch(err => logger.error('AI analysis error', { err: err.message }));
   });
 
