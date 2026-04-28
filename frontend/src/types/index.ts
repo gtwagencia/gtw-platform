@@ -56,6 +56,7 @@ export interface Workspace {
   meta_pixel_id: string | null;
   meta_ad_account_id: string | null;
   has_meta_conversions_token: boolean;
+  has_meta_access_token: boolean;
   business_hours: BusinessHours | null;
   follow_up_enabled: boolean;
   ai_analysis_enabled: boolean;
