@@ -61,6 +61,7 @@ export interface Workspace {
   follow_up_enabled: boolean;
   ai_analysis_enabled: boolean;
   ai_analysis_interval_minutes: number;
+  ticket_storage_quota_mb: number;
   ai_ignore_groups: boolean;
   ai_provider: string | null;
   role?: string; // workspace_memberships.role do usuário atual (ausente para owners/admins)

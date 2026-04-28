@@ -1,9 +1,14 @@
 'use strict';
 
-const { Router } = require('express');
+const { Router }   = require('express');
+const multer       = require('multer');
 const { authenticate }     = require('../../middleware/auth');
 const { workspaceContext } = require('../../middleware/workspaceContext');
+const { query }    = require('../../config/database');
+const storageSvc   = require('../../services/storage.service');
 const svc = require('./tickets.service');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const router = Router({ mergeParams: true });
 
@@ -197,15 +202,27 @@ router.post('/boards/:boardId/tickets', ...auth, (req, res, next) => requireBoar
   } catch (err) { next(err); }
 });
 
-// Create ticket from conversation
+// Create ticket from conversation (suporta attachmentUrls de mídias selecionadas)
 router.post('/boards/:boardId/tickets/from-conversation', ...auth, (req, res, next) => requireBoardAccess(req, res, next, false), async (req, res, next) => {
   try {
-    const { conversationId, contactId, contactName, columnId, assigneeId, priority, title, description } = req.body;
+    const { conversationId, contactId, contactName, columnId, assigneeId, priority, title, description, attachmentUrls } = req.body;
     if (!conversationId) return res.status(400).json({ error: 'conversationId é obrigatório' });
     const ticket = await svc.createTicketFromConversation(
       req.params.workspaceId, req.user.sub,
       { boardId: req.params.boardId, columnId, conversationId, contactId, contactName, title, description, assigneeId, priority }
     );
+    // Vincula arquivos de mídia selecionados na conversa
+    if (Array.isArray(attachmentUrls) && attachmentUrls.length > 0) {
+      for (const att of attachmentUrls) {
+        if (!att.url) continue;
+        await svc.addAttachment(ticket.id, null, req.params.workspaceId, req.user.sub, {
+          fileName: att.fileName || att.url.split('/').pop() || 'arquivo',
+          fileUrl:  att.url,
+          fileSize: att.fileSize || 0,
+          mimeType: att.mimeType || null,
+        });
+      }
+    }
     res.status(201).json(ticket);
   } catch (err) { next(err); }
 });
@@ -384,6 +401,99 @@ router.get('/reports', ...auth, async (req, res, next) => {
     if (!from || !to) return res.status(400).json({ error: 'from e to são obrigatórios' });
     const report = await svc.getResolutionReport(req.params.workspaceId, { from, to, boardId });
     res.json(report);
+  } catch (err) { next(err); }
+});
+
+// ── Comments ──────────────────────────────────────────────────────────────────
+
+router.get('/tickets/:ticketId/comments', ...auth, async (req, res, next) => {
+  try {
+    res.json(await svc.listComments(req.params.ticketId));
+  } catch (err) { next(err); }
+});
+
+router.post('/tickets/:ticketId/comments', ...auth, upload.single('file'), async (req, res, next) => {
+  try {
+    const { content } = req.body;
+    const workspaceId = req.params.workspaceId;
+
+    // Verifica quota antes de fazer upload
+    if (req.file) {
+      const usage = await svc.getStorageUsage(workspaceId);
+      if (usage.used_bytes + req.file.size > usage.quota_bytes) {
+        return res.status(413).json({ error: `Quota de armazenamento excedida (${usage.quota_mb} MB)` });
+      }
+    }
+
+    const comment = await svc.createComment(
+      req.params.ticketId, workspaceId, req.user.sub, content
+    );
+
+    if (req.file) {
+      const url = await storageSvc.uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+      await svc.addAttachment(req.params.ticketId, comment.id, workspaceId, req.user.sub, {
+        fileName: req.file.originalname,
+        fileUrl:  url,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+      });
+      // Recarrega o comentário com o anexo
+      const comments = await svc.listComments(req.params.ticketId);
+      return res.status(201).json(comments.find(c => c.id === comment.id) || comment);
+    }
+
+    res.status(201).json(comment);
+  } catch (err) { next(err); }
+});
+
+router.delete('/tickets/:ticketId/comments/:commentId', ...auth, async (req, res, next) => {
+  try {
+    await svc.deleteComment(req.params.commentId, req.user.sub, req.params.workspaceId);
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// ── Attachments (direto no ticket, sem comentário) ────────────────────────────
+
+router.get('/tickets/:ticketId/attachments', ...auth, async (req, res, next) => {
+  try {
+    res.json(await svc.listAttachments(req.params.ticketId));
+  } catch (err) { next(err); }
+});
+
+router.post('/tickets/:ticketId/attachments', ...auth, upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Arquivo obrigatório' });
+    const workspaceId = req.params.workspaceId;
+
+    const usage = await svc.getStorageUsage(workspaceId);
+    if (usage.used_bytes + req.file.size > usage.quota_bytes) {
+      return res.status(413).json({ error: `Quota de armazenamento excedida (${usage.quota_mb} MB)` });
+    }
+
+    const url = await storageSvc.uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+    const att = await svc.addAttachment(req.params.ticketId, null, workspaceId, req.user.sub, {
+      fileName: req.file.originalname,
+      fileUrl:  url,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+    });
+    res.status(201).json(att);
+  } catch (err) { next(err); }
+});
+
+router.delete('/tickets/:ticketId/attachments/:attachmentId', ...auth, async (req, res, next) => {
+  try {
+    await svc.deleteAttachment(req.params.attachmentId, req.params.workspaceId);
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// ── Storage usage ─────────────────────────────────────────────────────────────
+
+router.get('/storage', ...auth, async (req, res, next) => {
+  try {
+    res.json(await svc.getStorageUsage(req.params.workspaceId));
   } catch (err) { next(err); }
 });
 

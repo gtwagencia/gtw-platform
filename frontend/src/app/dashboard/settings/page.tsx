@@ -40,7 +40,8 @@ const DAY_KEYS = ['monday','tuesday','wednesday','thursday','friday','saturday',
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { currentWorkspace, setWorkspace } = useAuth();
+  const { currentWorkspace, setWorkspace, user } = useAuth();
+  const isSuperAdmin = (user as any)?.isSuperAdmin === true;
 
   const [form, setForm] = useState({
     name:                 '',
@@ -52,6 +53,7 @@ export default function SettingsPage() {
     followUpEnabled:      false,
     aiAnalysisEnabled:         false,
     aiAnalysisIntervalMinutes: 60,
+    ticketStorageQuotaMb:      5120,
     aiIgnoreGroups:       true,
     anthropicApiKey:      '',
     openaiApiKey:         '',
@@ -76,6 +78,7 @@ export default function SettingsPage() {
         followUpEnabled:      currentWorkspace.follow_up_enabled ?? false,
         aiAnalysisEnabled:         currentWorkspace.ai_analysis_enabled ?? false,
         aiAnalysisIntervalMinutes: currentWorkspace.ai_analysis_interval_minutes ?? 60,
+        ticketStorageQuotaMb:      currentWorkspace.ticket_storage_quota_mb ?? 5120,
         aiIgnoreGroups:       currentWorkspace.ai_ignore_groups ?? true,
         anthropicApiKey:      '',
         openaiApiKey:         '',
@@ -467,6 +470,38 @@ export default function SettingsPage() {
               </label>
             </div>
           </div>
+
+          {/* ── Armazenamento de Tickets (superadmin) ─────────────── */}
+          {isSuperAdmin && (
+            <div className="card p-6">
+              <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                <Save className="w-4 h-4 text-gray-500" />
+                Armazenamento de Tickets
+              </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Limite de espaço em disco para arquivos anexados aos tickets deste workspace.
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 max-w-xs">
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">Quota máxima</label>
+                  <select
+                    className="input w-full"
+                    value={form.ticketStorageQuotaMb}
+                    onChange={e => setForm({ ...form, ticketStorageQuotaMb: parseInt(e.target.value) })}
+                  >
+                    <option value={512}>512 MB</option>
+                    <option value={1024}>1 GB</option>
+                    <option value={2048}>2 GB</option>
+                    <option value={5120}>5 GB</option>
+                    <option value={10240}>10 GB</option>
+                    <option value={20480}>20 GB</option>
+                    <option value={51200}>50 GB</option>
+                  </select>
+                </div>
+                <p className="text-xs text-gray-400 mt-5">Visível apenas para superadmin</p>
+              </div>
+            </div>
+          )}
 
           {/* ── Horário comercial ──────────────────────────────────── */}
           <div className="card p-6">

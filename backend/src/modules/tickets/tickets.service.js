@@ -810,6 +810,99 @@ async function createTicketFromConversation(workspaceId, userId, { boardId, colu
   });
 }
 
+// ── Comments ──────────────────────────────────────────────────────────────────
+
+async function listComments(ticketId) {
+  const r = await query(
+    `SELECT tc.*, u.name AS user_name, u.avatar_url AS user_avatar,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', ta.id, 'file_name', ta.file_name, 'file_url', ta.file_url,
+                  'file_size', ta.file_size, 'mime_type', ta.mime_type
+                ) ORDER BY ta.created_at
+              ) FILTER (WHERE ta.id IS NOT NULL), '[]'
+            ) AS attachments
+     FROM ticket_comments tc
+     LEFT JOIN users u ON u.id = tc.user_id
+     LEFT JOIN ticket_attachments ta ON ta.comment_id = tc.id
+     WHERE tc.ticket_id = $1
+     GROUP BY tc.id, u.name, u.avatar_url
+     ORDER BY tc.created_at ASC`,
+    [ticketId]
+  );
+  return r.rows;
+}
+
+async function createComment(ticketId, workspaceId, userId, content) {
+  const r = await query(
+    `INSERT INTO ticket_comments (ticket_id, workspace_id, user_id, content)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [ticketId, workspaceId, userId, content || null]
+  );
+  const comment = r.rows[0];
+  const userRes = await query('SELECT name, avatar_url FROM users WHERE id = $1', [userId]);
+  return { ...comment, user_name: userRes.rows[0]?.name, user_avatar: userRes.rows[0]?.avatar_url, attachments: [] };
+}
+
+async function deleteComment(commentId, userId, workspaceId) {
+  await query(
+    `DELETE FROM ticket_comments WHERE id = $1 AND workspace_id = $2 AND (user_id = $3 OR $3 IN (
+      SELECT u.id FROM users u JOIN workspace_memberships wm ON wm.user_id = u.id
+      WHERE wm.workspace_id = $2 AND wm.role IN ('admin','owner')
+    ))`,
+    [commentId, workspaceId, userId]
+  );
+}
+
+// ── Attachments ───────────────────────────────────────────────────────────────
+
+async function listAttachments(ticketId) {
+  const r = await query(
+    `SELECT ta.*, u.name AS user_name FROM ticket_attachments ta
+     LEFT JOIN users u ON u.id = ta.user_id
+     WHERE ta.ticket_id = $1 AND ta.comment_id IS NULL
+     ORDER BY ta.created_at DESC`,
+    [ticketId]
+  );
+  return r.rows;
+}
+
+async function addAttachment(ticketId, commentId, workspaceId, userId, { fileName, fileUrl, fileSize, mimeType }) {
+  const r = await query(
+    `INSERT INTO ticket_attachments (ticket_id, comment_id, workspace_id, user_id, file_name, file_url, file_size, mime_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [ticketId, commentId || null, workspaceId, userId, fileName, fileUrl, fileSize || 0, mimeType || null]
+  );
+  return r.rows[0];
+}
+
+async function deleteAttachment(attachmentId, workspaceId) {
+  await query('DELETE FROM ticket_attachments WHERE id = $1 AND workspace_id = $2', [attachmentId, workspaceId]);
+}
+
+// ── Storage usage ─────────────────────────────────────────────────────────────
+
+async function getStorageUsage(workspaceId) {
+  const r = await query(
+    `SELECT COALESCE(SUM(file_size), 0)::bigint AS used_bytes
+     FROM ticket_attachments WHERE workspace_id = $1`,
+    [workspaceId]
+  );
+  const wsRes = await query(
+    'SELECT ticket_storage_quota_mb FROM workspaces WHERE id = $1', [workspaceId]
+  );
+  const quotaMb  = wsRes.rows[0]?.ticket_storage_quota_mb ?? 5120;
+  const usedBytes = parseInt(r.rows[0].used_bytes, 10);
+  return {
+    used_bytes:  usedBytes,
+    quota_bytes: quotaMb * 1024 * 1024,
+    quota_mb:    quotaMb,
+    used_mb:     Math.round(usedBytes / (1024 * 1024) * 100) / 100,
+    pct:         Math.round((usedBytes / (quotaMb * 1024 * 1024)) * 100),
+  };
+}
+
 module.exports = {
   isTicketsEnabled,
   setTicketsEnabled,
@@ -853,4 +946,11 @@ module.exports = {
   getResolutionReport,
   spawnDueRecurringTickets,
   createTicketFromConversation,
+  listComments,
+  createComment,
+  deleteComment,
+  listAttachments,
+  addAttachment,
+  deleteAttachment,
+  getStorageUsage,
 };

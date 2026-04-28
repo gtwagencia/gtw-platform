@@ -1122,7 +1122,7 @@ export default function BoardPage() {
                               <TicketCard
                                 ticket={ticket}
                                 isDragging={snap.isDragging}
-                                onClick={() => setSelectedTicket(ticket)}
+                                onClick={() => router.push(`/dashboard/tickets/${boardId}/${ticket.id}`)}
                               />
                             </div>
                           )}
@@ -1159,21 +1159,6 @@ export default function BoardPage() {
           </div>
         </DragDropContext>
       </div>
-
-      {/* Ticket detail modal */}
-      {selectedTicket && (
-        <TicketModal
-          ticket={selectedTicket}
-          columns={board.columns}
-          members={members}
-          labels={labels}
-          workspaceId={currentWorkspace.id}
-          onClose={() => setSelectedTicket(null)}
-          onUpdated={handleTicketUpdated}
-          onDeleted={handleTicketDeleted}
-          canEdit={canEdit}
-        />
-      )}
 
       {/* Manage members modal */}
       {showMembers && (

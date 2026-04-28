@@ -58,6 +58,10 @@ router.put('/:workspaceId', authenticate, orgContext, workspaceContext, async (r
     if (!['admin', 'owner'].includes(req.orgRole) && !req.user.isSuperAdmin) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
+    // Somente superadmin pode alterar a quota de armazenamento
+    if (req.body.ticketStorageQuotaMb !== undefined && !req.user.isSuperAdmin) {
+      delete req.body.ticketStorageQuotaMb;
+    }
     const ws = await svc.update(req.params.workspaceId, req.body);
     res.json(sanitizeWorkspace(ws));
   } catch (err) { next(err); }

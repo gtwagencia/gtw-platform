@@ -48,6 +48,7 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   const [ticketColId,    setTicketColId]    = useState('');
   const [ticketTitle,    setTicketTitle]    = useState('');
   const [ticketDesc,     setTicketDesc]     = useState('');
+  const [ticketAttachments, setTicketAttachments] = useState<{ url: string; fileName: string; mimeType: string; fileSize: number }[]>([]);
   const [ticketPriority, setTicketPriority] = useState('medium');
   const [ticketSaving,    setTicketSaving]    = useState(false);
   const [hoveredMsgId,    setHoveredMsgId]    = useState<string | null>(null);
@@ -234,10 +235,11 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     }
   }
 
-  async function openTicketModal(prefillDesc = '') {
+  async function openTicketModal(prefillDesc = '', prefillAttachments: typeof ticketAttachments = []) {
     if (!currentWorkspace) return;
     setTicketTitle(conversation.contact_name || '');
     setTicketDesc(prefillDesc);
+    setTicketAttachments(prefillAttachments);
     setTicketBoardId('');
     setTicketColId('');
     setTicketPriority('medium');
@@ -286,12 +288,26 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
   }
 
   function openTicketFromSelection() {
-    const combined = messages
-      .filter(m => selectedMsgIds.has(m.id) && m.content)
+    const selected = messages.filter(m => selectedMsgIds.has(m.id));
+    // Texto das mensagens de texto vira descrição
+    const combined = selected
+      .filter(m => m.message_type === 'text' && m.content)
       .map(m => m.content!)
       .join('\n\n---\n\n');
+    // Mídias viram anexos
+    const mediaAttachments = selected
+      .filter(m => m.media_url && m.message_type !== 'text')
+      .map(m => ({
+        url:      m.media_url!,
+        fileName: m.content || m.media_url!.split('/').pop() || 'arquivo',
+        mimeType: m.message_type === 'image' ? 'image/*'
+                : m.message_type === 'video' ? 'video/*'
+                : m.message_type === 'audio' ? 'audio/*'
+                : 'application/octet-stream',
+        fileSize: 0,
+      }));
     cancelSelection();
-    openTicketModal(combined);
+    openTicketModal(combined, mediaAttachments);
   }
 
   function handleTicketBoardChange(boardId: string) {
@@ -305,13 +321,14 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     setTicketSaving(true);
     try {
       await api.post(`/workspaces/${currentWorkspace.id}/tickets/boards/${ticketBoardId}/tickets/from-conversation`, {
-        conversationId: conversation.id,
-        contactId:      conversation.contact_id,
-        contactName:    conversation.contact_name,
-        columnId:       ticketColId || undefined,
-        title:          ticketTitle || conversation.contact_name,
-        description:    ticketDesc || undefined,
-        priority:       ticketPriority,
+        conversationId:  conversation.id,
+        contactId:       conversation.contact_id,
+        contactName:     conversation.contact_name,
+        columnId:        ticketColId || undefined,
+        title:           ticketTitle || conversation.contact_name,
+        description:     ticketDesc || undefined,
+        priority:        ticketPriority,
+        attachmentUrls:  ticketAttachments.length > 0 ? ticketAttachments : undefined,
       });
       setShowTicket(false);
     } catch {
@@ -630,10 +647,10 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                 )}
                 onMouseEnter={() => !selectionMode && setHoveredMsgId(msg.id)}
                 onMouseLeave={() => setHoveredMsgId(null)}
-                onClick={() => selectionMode && msg.content && toggleMsgSelection(msg.id)}
+                onClick={() => selectionMode && (msg.content || msg.media_url) && toggleMsgSelection(msg.id)}
               >
                 {/* Checkbox (visível no hover ou quando em modo seleção) */}
-                {msg.content && msg.message_type === 'text' && (
+                {(msg.content || msg.media_url) && (
                   <div className={clsx(
                     'flex-shrink-0 flex items-center self-center transition-opacity',
                     (selectionMode || hoveredMsgId === msg.id) ? 'opacity-100' : 'opacity-0'
@@ -828,6 +845,26 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                   placeholder="Descreva o problema ou contexto..."
                 />
               </div>
+
+              {ticketAttachments.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">
+                    Arquivos selecionados ({ticketAttachments.length})
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ticketAttachments.map((att, i) => (
+                      <div key={i} className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg px-2 py-1 text-xs">
+                        <Paperclip className="w-3 h-3" />
+                        <span className="truncate max-w-[120px]">{att.fileName}</span>
+                        <button onClick={() => setTicketAttachments(prev => prev.filter((_, j) => j !== i))}
+                                className="text-blue-400 hover:text-blue-600">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {ticketBoards.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-3">Nenhum board disponível</p>
