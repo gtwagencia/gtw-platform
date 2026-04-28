@@ -387,10 +387,15 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                 <span>·</span>
                 <span
                   className="inline-flex items-center gap-1 font-medium text-blue-600"
-                  title={conversation.meta_ctwa_clid ? `Click ID: ${conversation.meta_ctwa_clid}` : undefined}
+                  title={[
+                    conversation.meta_campaign_name && `Campanha: ${conversation.meta_campaign_name}`,
+                    conversation.meta_adset_name    && `Conjunto: ${conversation.meta_adset_name}`,
+                    conversation.meta_ad_name       && `Anúncio: ${conversation.meta_ad_name}`,
+                    conversation.meta_ctwa_clid     && `Click ID: ${conversation.meta_ctwa_clid}`,
+                  ].filter(Boolean).join('\n') || undefined}
                 >
                   <Megaphone className="w-3 h-3" />
-                  {conversation.meta_ref || 'Meta Ads'}
+                  {conversation.meta_ad_name || conversation.meta_campaign_name || conversation.meta_ref || 'Meta Ads'}
                 </span>
               </>
             )}
@@ -526,6 +531,28 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
           )}
         </div>
       </div>
+
+      {/* ── Meta Ads attribution banner ──────────────────────── */}
+      {conversation.meta_source === 'paid' && (
+        <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 flex items-start gap-2.5 flex-shrink-0">
+          <Megaphone className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-blue-700 leading-relaxed flex flex-wrap gap-x-3">
+            <span className="font-semibold">Lead via Meta Ads</span>
+            {conversation.meta_campaign_name && (
+              <span>Campanha: <span className="font-semibold">{conversation.meta_campaign_name}</span></span>
+            )}
+            {conversation.meta_adset_name && (
+              <span>Conjunto: <span className="font-semibold">{conversation.meta_adset_name}</span></span>
+            )}
+            {conversation.meta_ad_name && (
+              <span>Anúncio: <span className="font-semibold text-blue-900">{conversation.meta_ad_name}</span></span>
+            )}
+            {!conversation.meta_ad_name && !conversation.meta_campaign_name && (conversation.meta_ref || conversation.meta_ad_id) && (
+              <span>Ref: <span className="font-semibold">{conversation.meta_ref || conversation.meta_ad_id}</span></span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Messages ─────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">

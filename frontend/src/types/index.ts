@@ -146,6 +146,10 @@ export interface Conversation {
   meta_ref: string | null;
   meta_ctwa_clid: string | null;
   meta_source: 'paid' | 'organic' | null;
+  meta_ad_id: string | null;
+  meta_ad_name: string | null;
+  meta_adset_name: string | null;
+  meta_campaign_name: string | null;
 }
 
 export interface Message {

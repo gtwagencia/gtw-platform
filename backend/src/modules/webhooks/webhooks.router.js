@@ -539,23 +539,51 @@ router.post('/evolution/:inboxId', async (req, res) => {
 
         // Click-to-WhatsApp attribution (lê antes do findOrCreate para salvar na conversa)
         const referral     = msg.referral || msg.message?.extendedTextMessage?.contextInfo?.externalAdReply || null;
-        const metaRef      = referral?.ref || referral?.headline || null;
+        const metaRef      = referral?.ref || referral?.headline || referral?.title || null;
         const metaCtwaClid = referral?.ctwaClid || null;
-        const metaSource   = (metaRef || metaCtwaClid) ? 'paid' : 'organic';
+        const metaAdId     = referral?.sourceId || referral?.source_id || null;
+        const metaSource   = (metaRef || metaCtwaClid || metaAdId) ? 'paid' : 'organic';
 
         const { conversation, created } = await convSvc.findOrCreate(inbox.workspace_id, {
           inboxId: inbox.id, contactId: contact.id, remoteJid,
         });
 
         // Salva atribuição na conversa (só na criação, para não sobrescrever dados históricos)
-        if (created && (metaRef || metaCtwaClid)) {
+        if (created && metaSource === 'paid') {
           await query(
-            `UPDATE conversations SET meta_ref = $1, meta_ctwa_clid = $2, meta_source = $3 WHERE id = $4`,
-            [metaRef, metaCtwaClid, metaSource, conversation.id]
+            `UPDATE conversations
+             SET meta_ref = $1, meta_ctwa_clid = $2, meta_source = $3, meta_ad_id = $4
+             WHERE id = $5`,
+            [metaRef, metaCtwaClid, metaSource, metaAdId, conversation.id]
           );
           conversation.meta_ref      = metaRef;
           conversation.meta_ctwa_clid = metaCtwaClid;
           conversation.meta_source   = metaSource;
+          conversation.meta_ad_id    = metaAdId;
+
+          // Enriquece com nome real do anúncio via Marketing API (async, não bloqueia)
+          if (metaAdId) {
+            const metaSvc = require('../meta/meta.service');
+            const wsTokenRes = await query(
+              'SELECT meta_access_token FROM workspaces WHERE id = $1',
+              [inbox.workspace_id]
+            );
+            const accessToken = wsTokenRes.rows[0]?.meta_access_token;
+            if (accessToken) {
+              metaSvc.fetchAdDetails(accessToken, metaAdId)
+                .then(async (adInfo) => {
+                  if (!adInfo) return;
+                  await query(
+                    `UPDATE conversations
+                     SET meta_ad_name = $1, meta_adset_name = $2, meta_campaign_name = $3
+                     WHERE id = $4`,
+                    [adInfo.ad_name, adInfo.adset_name, adInfo.campaign_name, conversation.id]
+                  );
+                  logger.info('Meta ad enriched', { conversationId: conversation.id, ...adInfo });
+                })
+                .catch(err => logger.warn('Meta ad enrichment failed', { err: err.message }));
+            }
+          }
         }
 
         const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg, inbox);
@@ -598,15 +626,15 @@ router.post('/evolution/:inboxId', async (req, res) => {
             metaSource,
           }).catch(err => logger.warn('Auto-deal creation failed', { err: err.message }));
 
-          // Envia evento Lead para Meta CAPI se workspace tiver pixel configurado
+          // Envia evento Lead para Meta CAPI se workspace tiver pixel + conversions token
           const metaSvc = require('../meta/meta.service');
-          const wsRes = await query(
-            'SELECT meta_pixel_id, meta_conversions_token FROM workspaces WHERE id = $1',
+          const wsCapiRes = await query(
+            'SELECT id, meta_pixel_id, meta_conversions_token FROM workspaces WHERE id = $1',
             [inbox.workspace_id]
           );
-          const ws = wsRes.rows[0];
-          if (ws?.meta_pixel_id && ws?.meta_conversions_token) {
-            metaSvc.sendLeadEvent(ws, { contact, metaCtwaClid }).catch(err =>
+          const wsCapi = wsCapiRes.rows[0];
+          if (wsCapi?.meta_pixel_id && wsCapi?.meta_conversions_token) {
+            metaSvc.sendLeadEvent(wsCapi, { contact, metaCtwaClid }).catch(err =>
               logger.warn('Meta Lead event failed', { err: err.message })
             );
           }

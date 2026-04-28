@@ -117,6 +117,34 @@ async function sendLeadEvent(workspace, { contact, metaCtwaClid }) {
   return sendEvent(workspace, { eventName: 'Lead', contact, metaCtwaClid });
 }
 
+// ── Marketing API: busca detalhes do anúncio ──────────────────────────────
+
+/**
+ * Dado um ad_id da Meta, retorna nome do anúncio, conjunto e campanha.
+ * Requer meta_access_token no workspace.
+ */
+async function fetchAdDetails(accessToken, adId) {
+  if (!accessToken || !adId) return null;
+  try {
+    const resp = await axios.get(`${META_API_BASE}/${adId}`, {
+      params: {
+        fields: 'name,adset{name,campaign{name}}',
+        access_token: accessToken,
+      },
+      timeout: 8000,
+    });
+    const d = resp.data;
+    return {
+      ad_name:       d.name        || null,
+      adset_name:    d.adset?.name || null,
+      campaign_name: d.adset?.campaign?.name || null,
+    };
+  } catch (err) {
+    logger.warn('Meta fetchAdDetails failed', { adId, err: err.response?.data?.error?.message || err.message });
+    return null;
+  }
+}
+
 // ── Event history ──────────────────────────────────────────────────────────
 
 async function listEvents(workspaceId, { page = 1, limit = 50 } = {}) {
@@ -139,4 +167,4 @@ async function listEvents(workspaceId, { page = 1, limit = 50 } = {}) {
   return { data: r.rows, total: parseInt(countRes.rows[0].count, 10), page, limit };
 }
 
-module.exports = { sendEvent, sendPurchaseEvent, sendLeadEvent, listEvents };
+module.exports = { sendEvent, sendPurchaseEvent, sendLeadEvent, listEvents, fetchAdDetails };
