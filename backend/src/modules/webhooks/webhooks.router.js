@@ -447,6 +447,10 @@ router.post('/evolution/:inboxId', async (req, res) => {
         });
       }
 
+      // Evolution API v2 pode enviar referral no nível do evento (event.data.referral)
+      // e não necessariamente dentro de cada mensagem
+      const eventLevelReferral = event.data?.referral || event.referral || null;
+
       const messages = Array.isArray(event.data?.messages)
         ? event.data.messages : [event.data];
 
@@ -549,27 +553,37 @@ router.post('/evolution/:inboxId', async (req, res) => {
         if (!contact) continue;
 
         // Click-to-WhatsApp attribution
-        // A Evolution API pode entregar o referral em vários campos dependendo da versão
+        // Evolution API v2 pode enviar referral em locais diferentes conforme versão:
+        // - msg.referral (v2, nível da mensagem)
+        // - eventLevelReferral (v2, nível do evento data)
+        // - msg.message.*.contextInfo.externalAdReply (WAProto padrão)
         const referral = msg.referral
+          || eventLevelReferral
           || msg.message?.extendedTextMessage?.contextInfo?.externalAdReply
           || msg.message?.imageMessage?.contextInfo?.externalAdReply
           || msg.message?.videoMessage?.contextInfo?.externalAdReply
           || msg.message?.documentMessage?.contextInfo?.externalAdReply
+          || msg.message?.audioMessage?.contextInfo?.externalAdReply
           || null;
 
-        const metaRef      = referral?.ref || referral?.headline || referral?.title || referral?.body || null;
+        const metaRef      = referral?.ref || referral?.headline || referral?.title || null;
         const metaCtwaClid = referral?.ctwaClid || referral?.ctwa_clid || null;
         const metaAdId     = referral?.sourceId || referral?.source_id || referral?.sourceID || null;
         const metaSource   = (metaRef || metaCtwaClid || metaAdId) ? 'paid' : 'organic';
 
-        // Log para diagnóstico (mantém em produção até confirmar funcionamento)
-        if (referral) {
-          logger.info('[meta-referral] dados capturados', {
-            phone, referralKeys: Object.keys(referral), metaRef, metaCtwaClid, metaAdId, metaSource,
-          });
-        } else {
-          logger.debug('[meta-referral] sem referral nesta mensagem', { phone, msgKeys: Object.keys(msg.message || {}) });
-        }
+        // Log sempre para diagnóstico — mostra estrutura do payload para identificar onde chega o referral
+        logger.info('[meta-referral] análise da mensagem', {
+          phone,
+          hasMsgReferral:        !!msg.referral,
+          hasEventReferral:      !!eventLevelReferral,
+          hasExternalAdReply:    !!msg.message?.extendedTextMessage?.contextInfo?.externalAdReply,
+          msgTopKeys:            Object.keys(msg).filter(k => !['key','message','messageStubParameters'].includes(k)),
+          messageTypes:          Object.keys(msg.message || {}),
+          metaSource,
+          metaRef,
+          metaCtwaClid:          metaCtwaClid ? '✓' : null,
+          metaAdId:              metaAdId ? '✓' : null,
+        });
 
         const { conversation, created } = await convSvc.findOrCreate(inbox.workspace_id, {
           inboxId: inbox.id, contactId: contact.id, remoteJid,
