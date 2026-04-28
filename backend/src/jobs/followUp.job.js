@@ -162,12 +162,15 @@ async function runAiAnalysis() {
        AND d.conversation_id IS NOT NULL
        AND (
          d.ai_analyzed_at IS NULL
-         OR EXISTS (
-           SELECT 1 FROM messages m
-           WHERE m.conversation_id = d.conversation_id
-             AND m.direction = 'inbound'
-             AND m.is_private = false
-             AND m.created_at > d.ai_analyzed_at
+         OR (
+           d.ai_analyzed_at < NOW() - (COALESCE(w.ai_analysis_interval_minutes, 60) * INTERVAL '1 minute')
+           AND EXISTS (
+             SELECT 1 FROM messages m
+             WHERE m.conversation_id = d.conversation_id
+               AND m.direction = 'inbound'
+               AND m.is_private = false
+               AND m.created_at > d.ai_analyzed_at
+           )
          )
        )
      ORDER BY d.updated_at DESC

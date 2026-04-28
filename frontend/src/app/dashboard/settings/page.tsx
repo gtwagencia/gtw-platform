@@ -50,7 +50,8 @@ export default function SettingsPage() {
     metaAccessToken:      '',
     metaConversionsToken: '',
     followUpEnabled:      false,
-    aiAnalysisEnabled:    false,
+    aiAnalysisEnabled:         false,
+    aiAnalysisIntervalMinutes: 60,
     aiIgnoreGroups:       true,
     anthropicApiKey:      '',
     openaiApiKey:         '',
@@ -73,7 +74,8 @@ export default function SettingsPage() {
         metaAccessToken:      '',
         metaConversionsToken: '',
         followUpEnabled:      currentWorkspace.follow_up_enabled ?? false,
-        aiAnalysisEnabled:    currentWorkspace.ai_analysis_enabled ?? false,
+        aiAnalysisEnabled:         currentWorkspace.ai_analysis_enabled ?? false,
+        aiAnalysisIntervalMinutes: currentWorkspace.ai_analysis_interval_minutes ?? 60,
         aiIgnoreGroups:       currentWorkspace.ai_ignore_groups ?? true,
         anthropicApiKey:      '',
         openaiApiKey:         '',
@@ -378,10 +380,31 @@ export default function SettingsPage() {
                 <div>
                   <div className="text-sm font-medium text-gray-900">Análise automática de leads</div>
                   <div className="text-xs text-gray-500">
-                    A IA lê as conversas e qualifica cada lead no funil a cada 15 minutos
+                    A IA lê as conversas e qualifica cada lead no funil automaticamente
                   </div>
                 </div>
               </label>
+
+              {form.aiAnalysisEnabled && (
+                <div className="ml-13 pl-1">
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Intervalo entre análises</label>
+                  <select
+                    className="input text-sm w-48"
+                    value={form.aiAnalysisIntervalMinutes}
+                    onChange={e => setForm({ ...form, aiAnalysisIntervalMinutes: parseInt(e.target.value) })}
+                  >
+                    <option value={5}>A cada 5 minutos</option>
+                    <option value={15}>A cada 15 minutos</option>
+                    <option value={30}>A cada 30 minutos</option>
+                    <option value={60}>A cada 1 hora</option>
+                    <option value={120}>A cada 2 horas</option>
+                    <option value={240}>A cada 4 horas</option>
+                    <option value={480}>A cada 8 horas</option>
+                    <option value={1440}>A cada 24 horas</option>
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">Intervalos menores consomem mais tokens da IA.</p>
+                </div>
+              )}
 
               {/* Follow-up toggle */}
               <label className="flex items-center gap-3 cursor-pointer">
