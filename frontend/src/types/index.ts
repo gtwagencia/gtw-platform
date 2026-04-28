@@ -142,6 +142,9 @@ export interface Conversation {
   department_name: string | null;
   department_color: string | null;
   labels: Label[];
+  meta_ref: string | null;
+  meta_ctwa_clid: string | null;
+  meta_source: 'paid' | 'organic' | null;
 }
 
 export interface Message {

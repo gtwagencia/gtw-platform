@@ -537,17 +537,28 @@ router.post('/evolution/:inboxId', async (req, res) => {
         }
         if (!contact) continue;
 
+        // Click-to-WhatsApp attribution (lê antes do findOrCreate para salvar na conversa)
+        const referral     = msg.referral || msg.message?.extendedTextMessage?.contextInfo?.externalAdReply || null;
+        const metaRef      = referral?.ref || referral?.headline || null;
+        const metaCtwaClid = referral?.ctwaClid || null;
+        const metaSource   = (metaRef || metaCtwaClid) ? 'paid' : 'organic';
+
         const { conversation, created } = await convSvc.findOrCreate(inbox.workspace_id, {
           inboxId: inbox.id, contactId: contact.id, remoteJid,
         });
 
-        const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg, inbox);
+        // Salva atribuição na conversa (só na criação, para não sobrescrever dados históricos)
+        if (created && (metaRef || metaCtwaClid)) {
+          await query(
+            `UPDATE conversations SET meta_ref = $1, meta_ctwa_clid = $2, meta_source = $3 WHERE id = $4`,
+            [metaRef, metaCtwaClid, metaSource, conversation.id]
+          );
+          conversation.meta_ref      = metaRef;
+          conversation.meta_ctwa_clid = metaCtwaClid;
+          conversation.meta_source   = metaSource;
+        }
 
-        // Click-to-WhatsApp attribution
-        const referral = msg.referral || msg.message?.extendedTextMessage?.contextInfo?.externalAdReply || null;
-        const metaRef      = referral?.ref || referral?.headline || null;
-        const metaCtwaClid = referral?.ctwaClid || null;
-        const metaSource   = (metaRef || metaCtwaClid) ? 'paid' : 'organic';
+        const { content, messageType, mediaUrl, mediaMimeType } = await extractMessageContent(msg, inbox);
 
         const message = await msgSvc.insertInbound(conversation.id, {
           content, messageType, mediaUrl, mediaMimeType, evolutionMsgId: msg.key?.id,

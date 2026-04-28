@@ -10,7 +10,7 @@ import { joinConversation, getSocket } from '@/lib/socket';
 import type { Conversation, Message, Label, CannedResponse } from '@/types';
 import {
   Send, Check, CheckCheck, AlertCircle,
-  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip, Ticket,
+  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip, Ticket, Megaphone,
 } from 'lucide-react';
 
 interface Props {
@@ -379,6 +379,18 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                 <span>·</span>
                 <span className="font-medium" style={{ color: conversation.department_color || '#6366f1' }}>
                   {conversation.department_name}
+                </span>
+              </>
+            )}
+            {conversation.meta_source === 'paid' && (
+              <>
+                <span>·</span>
+                <span
+                  className="inline-flex items-center gap-1 font-medium text-blue-600"
+                  title={conversation.meta_ctwa_clid ? `Click ID: ${conversation.meta_ctwa_clid}` : undefined}
+                >
+                  <Megaphone className="w-3 h-3" />
+                  {conversation.meta_ref || 'Meta Ads'}
                 </span>
               </>
             )}
