@@ -589,46 +589,76 @@ router.post('/evolution/:inboxId', async (req, res) => {
           inboxId: inbox.id, contactId: contact.id, remoteJid,
         });
 
-        // Salva atribuição sempre que chegar referral E a conversa ainda não tiver dados pagos
-        // (não limita a `created` para cobrir conversas reabertas ou existentes)
-        if (metaSource === 'paid' && !conversation.meta_ctwa_clid && !conversation.meta_ad_id) {
+        // Salva atribuição quando esta mensagem tem dados Meta E a conversa ainda não tem
+        // atribuição paga — simplificado para evitar falso negativo em campos null
+        const convAlreadyAttributed = conversation.meta_source === 'paid';
+
+        if (metaSource === 'paid' && !convAlreadyAttributed) {
+          // Extrai campos extras do referral para exibição
+          const metaSourceUrl = referral?.sourceUrl || referral?.source_url || null;
+          const metaHeadline  = referral?.headline || referral?.title || null;
+
           await query(
             `UPDATE conversations
              SET meta_ref = $1, meta_ctwa_clid = $2, meta_source = $3, meta_ad_id = $4
              WHERE id = $5`,
-            [metaRef, metaCtwaClid, metaSource, metaAdId, conversation.id]
+            [metaRef, metaCtwaClid, 'paid', metaAdId, conversation.id]
           );
-          conversation.meta_ref       = metaRef;
-          conversation.meta_ctwa_clid = metaCtwaClid;
-          conversation.meta_source    = metaSource;
-          conversation.meta_ad_id     = metaAdId;
+          conversation.meta_source = 'paid';
 
-          // Enriquece com nome real do anúncio via Marketing API (async, não bloqueia)
+          // Estratégia de nome em cascata:
+          // 1. Marketing API (se tiver access_token + sourceId)
+          // 2. ref configurado no anúncio
+          // 3. headline do externalAdReply
+          // 4. Sem nome (UI mostra "Meta Ads" como fallback)
           const metaSvc = require('../meta/meta.service');
           const wsTokenRes = await query(
             'SELECT meta_access_token FROM workspaces WHERE id = $1',
             [inbox.workspace_id]
           );
           const accessToken = wsTokenRes.rows[0]?.meta_access_token;
+
           if (accessToken && metaAdId) {
+            // Busca nome real via Marketing API
             metaSvc.fetchAdDetails(accessToken, metaAdId)
               .then(async (adInfo) => {
-                if (!adInfo) return;
+                if (!adInfo) {
+                  // Marketing API falhou: usa ref ou headline como fallback
+                  const fallbackName = metaRef || metaHeadline;
+                  if (fallbackName) {
+                    await query(`UPDATE conversations SET meta_ad_name = $1 WHERE id = $2`, [fallbackName, conversation.id]);
+                  }
+                  return;
+                }
                 await query(
                   `UPDATE conversations
                    SET meta_ad_name = $1, meta_adset_name = $2, meta_campaign_name = $3
                    WHERE id = $4`,
                   [adInfo.ad_name, adInfo.adset_name, adInfo.campaign_name, conversation.id]
                 );
-                logger.info('[meta-referral] anúncio enriquecido', { conversationId: conversation.id, ...adInfo });
+                logger.info('[meta-referral] anúncio enriquecido via Marketing API', { conversationId: conversation.id, ...adInfo });
               })
-              .catch(err => logger.warn('[meta-referral] enriquecimento falhou', { err: err.message }));
-          } else if (!metaAdId && metaRef) {
-            // Sem ad_id mas tem ref: salva o ref como nome do anúncio para exibição
-            await query(
-              `UPDATE conversations SET meta_ad_name = $1 WHERE id = $2`,
-              [metaRef, conversation.id]
-            );
+              .catch(err => {
+                logger.warn('[meta-referral] Marketing API falhou', { err: err.message });
+                // Salva fallback mesmo assim
+                const fallbackName = metaRef || metaHeadline;
+                if (fallbackName) {
+                  query(`UPDATE conversations SET meta_ad_name = $1 WHERE id = $2`, [fallbackName, conversation.id]).catch(() => {});
+                }
+              });
+          } else {
+            // Sem access_token ou sem sourceId — usa ref/headline se disponível
+            const fallbackName = metaRef || metaHeadline;
+            if (fallbackName) {
+              await query(`UPDATE conversations SET meta_ad_name = $1 WHERE id = $2`, [fallbackName, conversation.id]);
+            }
+            logger.info('[meta-referral] atribuição salva sem Marketing API', {
+              conversationId: conversation.id,
+              hasAccessToken: !!accessToken,
+              hasAdId: !!metaAdId,
+              fallbackName,
+              metaCtwaClid: metaCtwaClid ? '✓' : null,
+            });
           }
         }
 
