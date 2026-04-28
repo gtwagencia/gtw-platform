@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getSocket } from '@/lib/socket';
+import { getSocket, connectSocket } from '@/lib/socket';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useAuth } from '@/store/auth';
 import Header from '@/components/layout/Header';
@@ -710,7 +710,7 @@ function QuickCreateTicket({ columnId, boardId, workspaceId, onCreated, onClose 
 export default function BoardPage() {
   const params = useParams();
   const router = useRouter();
-  const { currentWorkspace, user } = useAuth();
+  const { currentWorkspace, user, accessToken } = useAuth();
   const boardId = params.boardId as string;
 
   const [board, setBoard] = useState<TicketBoard | null>(null);
@@ -742,6 +742,7 @@ export default function BoardPage() {
 
   useEffect(() => {
     if (!currentWorkspace) return;
+    connectSocket(currentWorkspace.id, accessToken ?? undefined);
     loadBoard();
     api.get<TicketLabel[]>(`/workspaces/${currentWorkspace.id}/tickets/labels`).then(r => setLabels(r.data)).catch(() => {});
     api.get<TicketBoardMember[]>(`/workspaces/${currentWorkspace.id}/tickets/boards/${boardId}/members`).then(r => setMembers(r.data)).catch(() => {});
