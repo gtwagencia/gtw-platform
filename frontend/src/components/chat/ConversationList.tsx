@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import api from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import type { Conversation, Message } from '@/types';
-import { Search, Filter, X, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Search, Filter, X, ChevronDown, AlertTriangle, Users } from 'lucide-react';
 
 interface Props {
   workspaceId: string;
@@ -23,9 +23,10 @@ interface FilterState {
 interface Option { id: string; name: string; }
 
 const STATUS_TABS = [
-  { key: 'open',     label: 'Abertas' },
-  { key: 'pending',  label: 'Pendentes' },
+  { key: 'open',     label: 'Abertas'    },
+  { key: 'pending',  label: 'Pendentes'  },
   { key: 'resolved', label: 'Resolvidas' },
+  { key: 'groups',   label: 'Grupos'     },
 ];
 
 export default function ConversationList({ workspaceId, selected, onSelect }: Props) {
@@ -55,7 +56,12 @@ export default function ConversationList({ workspaceId, selected, onSelect }: Pr
   const load = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
     try {
-      const params: Record<string, string> = { status, limit: '50' };
+      const params: Record<string, string> = { limit: '50' };
+      if (status === 'groups') {
+        params.isGroup = 'true';
+      } else {
+        params.status = status;
+      }
       if (filters.departmentId) params.departmentId = filters.departmentId;
       if (filters.inboxId)      params.inboxId      = filters.inboxId;
       const { data } = await api.get(`/workspaces/${workspaceId}/conversations`, { params });
@@ -108,9 +114,9 @@ export default function ConversationList({ workspaceId, selected, onSelect }: Pr
       });
     };
 
-    // Nova conversa: recarrega silenciosamente (sem skeleton) apenas se estiver na aba Abertas
+    // Nova conversa: recarrega silenciosamente apenas se na aba correspondente
     const onNew = () => {
-      if (status === 'open') load(false);
+      if (status === 'open' || status === 'groups') load(false);
     };
 
     // conversation:updated: fallback para quando o evento chegar via sala do workspace
@@ -310,8 +316,14 @@ export default function ConversationList({ workspaceId, selected, onSelect }: Pr
               )}
             >
               {/* Avatar with SLA indicator */}
-              <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-medium text-sm flex-shrink-0 relative">
-                {conv.contact_name?.[0]?.toUpperCase() || '?'}
+              <div className={clsx(
+                'w-10 h-10 rounded-full flex items-center justify-center font-medium text-sm flex-shrink-0 relative',
+                conv.is_group ? 'bg-green-100 text-green-700' : 'bg-brand-100 text-brand-700'
+              )}>
+                {conv.is_group
+                  ? <Users className="w-5 h-5" />
+                  : (conv.contact_name?.[0]?.toUpperCase() || '?')
+                }
                 {conv.sla_breached && (
                   <span className="absolute -top-1 -right-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-red-500 fill-red-100" />

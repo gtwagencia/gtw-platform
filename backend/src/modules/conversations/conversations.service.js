@@ -37,13 +37,21 @@ async function buildVisibilityClause(params, { isSuperAdmin, orgRole, workspaceR
 }
 
 async function list(workspaceId, filters = {}, caller = {}) {
-  const { status, inboxId, assigneeId, departmentId, contactId, labelId, page = 1, limit = 30 } = filters;
+  const { status, inboxId, assigneeId, departmentId, contactId, labelId, isGroup, page = 1, limit = 30 } = filters;
   const offset = (page - 1) * limit;
 
   const params = [workspaceId];
   const conds  = ['c.workspace_id = $1'];
 
-  if (status)       { params.push(status);       conds.push(`c.status = $${params.length}`); }
+  if (isGroup === true || isGroup === 'true') {
+    // Aba Grupos: só grupos, ignora filtro de status
+    conds.push('c.is_group = true');
+  } else {
+    // Abas normais: exclui grupos
+    conds.push('(c.is_group = false OR c.is_group IS NULL)');
+    if (status) { params.push(status); conds.push(`c.status = $${params.length}`); }
+  }
+
   if (inboxId)      { params.push(inboxId);      conds.push(`c.inbox_id = $${params.length}`); }
   if (assigneeId)   { params.push(assigneeId);   conds.push(`c.assignee_id = $${params.length}`); }
   if (departmentId) { params.push(departmentId); conds.push(`c.department_id = $${params.length}`); }
