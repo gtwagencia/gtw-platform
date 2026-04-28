@@ -548,52 +548,73 @@ router.post('/evolution/:inboxId', async (req, res) => {
         }
         if (!contact) continue;
 
-        // Click-to-WhatsApp attribution (lê antes do findOrCreate para salvar na conversa)
-        const referral     = msg.referral || msg.message?.extendedTextMessage?.contextInfo?.externalAdReply || null;
-        const metaRef      = referral?.ref || referral?.headline || referral?.title || null;
-        const metaCtwaClid = referral?.ctwaClid || null;
-        const metaAdId     = referral?.sourceId || referral?.source_id || null;
+        // Click-to-WhatsApp attribution
+        // A Evolution API pode entregar o referral em vários campos dependendo da versão
+        const referral = msg.referral
+          || msg.message?.extendedTextMessage?.contextInfo?.externalAdReply
+          || msg.message?.imageMessage?.contextInfo?.externalAdReply
+          || msg.message?.videoMessage?.contextInfo?.externalAdReply
+          || msg.message?.documentMessage?.contextInfo?.externalAdReply
+          || null;
+
+        const metaRef      = referral?.ref || referral?.headline || referral?.title || referral?.body || null;
+        const metaCtwaClid = referral?.ctwaClid || referral?.ctwa_clid || null;
+        const metaAdId     = referral?.sourceId || referral?.source_id || referral?.sourceID || null;
         const metaSource   = (metaRef || metaCtwaClid || metaAdId) ? 'paid' : 'organic';
+
+        // Log para diagnóstico (mantém em produção até confirmar funcionamento)
+        if (referral) {
+          logger.info('[meta-referral] dados capturados', {
+            phone, referralKeys: Object.keys(referral), metaRef, metaCtwaClid, metaAdId, metaSource,
+          });
+        } else {
+          logger.debug('[meta-referral] sem referral nesta mensagem', { phone, msgKeys: Object.keys(msg.message || {}) });
+        }
 
         const { conversation, created } = await convSvc.findOrCreate(inbox.workspace_id, {
           inboxId: inbox.id, contactId: contact.id, remoteJid,
         });
 
-        // Salva atribuição na conversa (só na criação, para não sobrescrever dados históricos)
-        if (created && metaSource === 'paid') {
+        // Salva atribuição sempre que chegar referral E a conversa ainda não tiver dados pagos
+        // (não limita a `created` para cobrir conversas reabertas ou existentes)
+        if (metaSource === 'paid' && !conversation.meta_ctwa_clid && !conversation.meta_ad_id) {
           await query(
             `UPDATE conversations
              SET meta_ref = $1, meta_ctwa_clid = $2, meta_source = $3, meta_ad_id = $4
              WHERE id = $5`,
             [metaRef, metaCtwaClid, metaSource, metaAdId, conversation.id]
           );
-          conversation.meta_ref      = metaRef;
+          conversation.meta_ref       = metaRef;
           conversation.meta_ctwa_clid = metaCtwaClid;
-          conversation.meta_source   = metaSource;
-          conversation.meta_ad_id    = metaAdId;
+          conversation.meta_source    = metaSource;
+          conversation.meta_ad_id     = metaAdId;
 
           // Enriquece com nome real do anúncio via Marketing API (async, não bloqueia)
-          if (metaAdId) {
-            const metaSvc = require('../meta/meta.service');
-            const wsTokenRes = await query(
-              'SELECT meta_access_token FROM workspaces WHERE id = $1',
-              [inbox.workspace_id]
+          const metaSvc = require('../meta/meta.service');
+          const wsTokenRes = await query(
+            'SELECT meta_access_token FROM workspaces WHERE id = $1',
+            [inbox.workspace_id]
+          );
+          const accessToken = wsTokenRes.rows[0]?.meta_access_token;
+          if (accessToken && metaAdId) {
+            metaSvc.fetchAdDetails(accessToken, metaAdId)
+              .then(async (adInfo) => {
+                if (!adInfo) return;
+                await query(
+                  `UPDATE conversations
+                   SET meta_ad_name = $1, meta_adset_name = $2, meta_campaign_name = $3
+                   WHERE id = $4`,
+                  [adInfo.ad_name, adInfo.adset_name, adInfo.campaign_name, conversation.id]
+                );
+                logger.info('[meta-referral] anúncio enriquecido', { conversationId: conversation.id, ...adInfo });
+              })
+              .catch(err => logger.warn('[meta-referral] enriquecimento falhou', { err: err.message }));
+          } else if (!metaAdId && metaRef) {
+            // Sem ad_id mas tem ref: salva o ref como nome do anúncio para exibição
+            await query(
+              `UPDATE conversations SET meta_ad_name = $1 WHERE id = $2`,
+              [metaRef, conversation.id]
             );
-            const accessToken = wsTokenRes.rows[0]?.meta_access_token;
-            if (accessToken) {
-              metaSvc.fetchAdDetails(accessToken, metaAdId)
-                .then(async (adInfo) => {
-                  if (!adInfo) return;
-                  await query(
-                    `UPDATE conversations
-                     SET meta_ad_name = $1, meta_adset_name = $2, meta_campaign_name = $3
-                     WHERE id = $4`,
-                    [adInfo.ad_name, adInfo.adset_name, adInfo.campaign_name, conversation.id]
-                  );
-                  logger.info('Meta ad enriched', { conversationId: conversation.id, ...adInfo });
-                })
-                .catch(err => logger.warn('Meta ad enrichment failed', { err: err.message }));
-            }
           }
         }
 
