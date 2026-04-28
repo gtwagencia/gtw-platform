@@ -436,6 +436,17 @@ router.post('/evolution/:inboxId', async (req, res) => {
 
     // ── MESSAGES_UPSERT ──────────────────────────────────────────────────
     if (eventType === 'MESSAGES_UPSERT' || eventType === 'messages.upsert') {
+      // Se estava marcado como desconectado mas está recebendo mensagens, corrige o status
+      if (inbox.connection_status !== 'connected') {
+        await query(
+          `UPDATE inboxes SET connection_status = 'connected', qr_code = NULL, updated_at = NOW() WHERE id = $1`,
+          [inboxId]
+        );
+        io?.to(`ws:${inbox.workspace_id}`).emit('inbox:status', {
+          inboxId, connectionStatus: 'connected', qrCode: null,
+        });
+      }
+
       const messages = Array.isArray(event.data?.messages)
         ? event.data.messages : [event.data];
 
