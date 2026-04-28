@@ -386,6 +386,19 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
             {conversation.bot_active && (
               <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">Bot</span>
             )}
+            {conversation.meta_source === 'paid' && (
+              <span
+                className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-600 text-white px-2 py-0.5 rounded-full flex-shrink-0"
+                title={[
+                  conversation.meta_campaign_name && `Campanha: ${conversation.meta_campaign_name}`,
+                  conversation.meta_adset_name    && `Conjunto: ${conversation.meta_adset_name}`,
+                  conversation.meta_ad_name       && `Anúncio: ${conversation.meta_ad_name}`,
+                ].filter(Boolean).join(' · ') || 'Lead via Meta Ads'}
+              >
+                <Megaphone className="w-3 h-3" />
+                {conversation.meta_ad_name || conversation.meta_campaign_name || conversation.meta_ref || 'Meta Ads'}
+              </span>
+            )}
           </div>
           <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
             <span>{conversation.contact_phone}</span>
@@ -396,23 +409,6 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
                 <span>·</span>
                 <span className="font-medium" style={{ color: conversation.department_color || '#6366f1' }}>
                   {conversation.department_name}
-                </span>
-              </>
-            )}
-            {conversation.meta_source === 'paid' && (
-              <>
-                <span>·</span>
-                <span
-                  className="inline-flex items-center gap-1 font-medium text-blue-600"
-                  title={[
-                    conversation.meta_campaign_name && `Campanha: ${conversation.meta_campaign_name}`,
-                    conversation.meta_adset_name    && `Conjunto: ${conversation.meta_adset_name}`,
-                    conversation.meta_ad_name       && `Anúncio: ${conversation.meta_ad_name}`,
-                    conversation.meta_ctwa_clid     && `Click ID: ${conversation.meta_ctwa_clid}`,
-                  ].filter(Boolean).join('\n') || undefined}
-                >
-                  <Megaphone className="w-3 h-3" />
-                  {conversation.meta_ad_name || conversation.meta_campaign_name || conversation.meta_ref || 'Meta Ads'}
                 </span>
               </>
             )}
