@@ -24,12 +24,11 @@ function sha256(value) {
 
 function buildUserData(contact, metaCtwaClid) {
   return {
-    ph:  contact.phone ? sha256(contact.phone.replace(/\D/g, '')) : undefined,
-    em:  contact.email ? sha256(contact.email)                    : undefined,
-    fbc: metaCtwaClid  ? `fb.1.${Date.now()}.${metaCtwaClid}`    :
-         contact.meta_lead_id ? `fb.1.${Date.now()}.${contact.meta_lead_id}` : undefined,
-    fbp: undefined,
-    country: sha256('br'),
+    ph:      contact.phone ? sha256(contact.phone.replace(/\D/g, '')) : undefined,
+    em:      contact.email ? sha256(contact.email)                    : undefined,
+    fbc:     metaCtwaClid  ? `fb.1.${Date.now()}.${metaCtwaClid}`    :
+             contact.meta_lead_id ? `fb.1.${Date.now()}.${contact.meta_lead_id}` : undefined,
+    country: 'br', // código ISO sem hash — Meta não aceita hash aqui
   };
 }
 
@@ -55,7 +54,7 @@ async function sendEvent(workspace, { eventName, contact, deal, sourceUrl, metaC
       event_name:    eventName,
       event_time:    eventTime,
       event_id:      eventId,
-      action_source: 'crm',
+      action_source: 'chat', // WhatsApp = chat; 'crm' não é valor válido na CAPI
       event_source_url: sourceUrl,
       user_data:     buildUserData(contact, metaCtwaClid || deal?.meta_ctwa_clid),
       custom_data:   deal ? buildCustomData(deal) : undefined,
@@ -102,7 +101,7 @@ async function sendEvent(workspace, { eventName, contact, deal, sourceUrl, metaC
       `UPDATE meta_conversion_events SET status = 'failed', meta_response = $1 WHERE id = $2`,
       [errorData, log.id]
     );
-    logger.error('Meta event failed', { eventName, error: err.message });
+    logger.error('Meta event failed', { eventName, error: err.message, metaError: errorData });
     throw Object.assign(new Error('Falha ao enviar evento Meta: ' + err.message), { status: 502 });
   }
 }

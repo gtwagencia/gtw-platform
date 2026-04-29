@@ -553,17 +553,17 @@ router.post('/evolution/:inboxId', async (req, res) => {
         if (!contact) continue;
 
         // Click-to-WhatsApp attribution
-        // Evolution API v2 pode enviar referral em locais diferentes conforme versão:
-        // - msg.referral (v2, nível da mensagem)
-        // - eventLevelReferral (v2, nível do evento data)
-        // - msg.message.*.contextInfo.externalAdReply (WAProto padrão)
+        // Evolution API v2 com mensagem tipo "conversation" coloca o externalAdReply
+        // em msg.contextInfo (nível raiz), não dentro de msg.message.*.contextInfo
         const referral = msg.referral
           || eventLevelReferral
+          || msg.contextInfo?.externalAdReply
           || msg.message?.extendedTextMessage?.contextInfo?.externalAdReply
           || msg.message?.imageMessage?.contextInfo?.externalAdReply
           || msg.message?.videoMessage?.contextInfo?.externalAdReply
           || msg.message?.documentMessage?.contextInfo?.externalAdReply
           || msg.message?.audioMessage?.contextInfo?.externalAdReply
+          || msg.message?.messageContextInfo?.externalAdReply
           || null;
 
         const metaRef      = referral?.ref || referral?.headline || referral?.title || null;
