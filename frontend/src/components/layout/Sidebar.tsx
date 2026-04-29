@@ -8,8 +8,9 @@ import clsx from 'clsx';
 import {
   MessageSquare, Users, Kanban, Inbox, Settings,
   LogOut, ChevronDown, Building2, Home, User,
-  Check, Plus, ArrowLeftRight, LayoutList, BarChart2, BookMarked, Tag, Ticket,
+  Check, Plus, ArrowLeftRight, LayoutList, BarChart2, BookMarked, Tag, Ticket, X,
 } from 'lucide-react';
+import { useSidebar } from '@/store/sidebar';
 import { useEffect, useRef, useState } from 'react';
 import type { Workspace } from '@/types';
 
@@ -40,6 +41,7 @@ export default function Sidebar() {
   const router   = useRouter();
   const { user, currentOrg, currentWorkspace, setWorkspace } = useAuth();
   const { workspaces, fetchForOrg } = useWorkspaceStore();
+  const { isOpen, close } = useSidebar();
 
   const [wsOpen, setWsOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -67,6 +69,7 @@ export default function Sidebar() {
   function handleWorkspaceSwitch(ws: Workspace) {
     setWorkspace(ws);
     setWsOpen(false);
+    close();
     router.push('/dashboard');
   }
 
@@ -75,14 +78,33 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 h-screen bg-gray-900 flex flex-col flex-shrink-0">
-      {/* Logo */}
+    <>
+      {/* Overlay mobile */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={close}
+        />
+      )}
+
+    <aside className={clsx(
+      'h-screen bg-gray-900 flex flex-col flex-shrink-0 transition-transform duration-300 z-50',
+      // Desktop: sempre visível, estático
+      'md:relative md:translate-x-0 md:w-64',
+      // Mobile: drawer fixo, esconde/mostra
+      'fixed top-0 left-0 bottom-0 w-72',
+      isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+    )}>
+      {/* Logo + botão fechar no mobile */}
       <div className="px-5 py-4 border-b border-gray-800">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center flex-shrink-0">
             <MessageSquare className="w-4 h-4 text-white" />
           </div>
-          <span className="text-white font-semibold text-sm">GTW Platform</span>
+          <span className="text-white font-semibold text-sm flex-1">GTW Platform</span>
+          <button onClick={close} className="md:hidden text-gray-500 hover:text-white p-1 rounded">
+            <X className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
@@ -167,6 +189,7 @@ export default function Sidebar() {
           <Link
             key={href}
             href={href}
+            onClick={close}
             className={clsx(
               'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
               isActive(href)
@@ -223,5 +246,6 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }

@@ -10,19 +10,20 @@ import { joinConversation, getSocket } from '@/lib/socket';
 import type { Conversation, Message, Label, CannedResponse } from '@/types';
 import {
   Send, Check, CheckCheck, AlertCircle,
-  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip, Ticket, Megaphone,
+  Archive, UserCheck, ChevronDown, Lock, Tag, X, Star, FileText, Paperclip, Ticket, Megaphone, ArrowLeft,
 } from 'lucide-react';
 
 interface Props {
   conversation: Conversation;
   onStatusChange: (conv: Conversation) => void;
+  onBack?: () => void;
 }
 
 interface Agent { id: string; name: string; avatar_url: string | null; }
 
 type Mode = 'reply' | 'note';
 
-export default function ChatWindow({ conversation, onStatusChange }: Props) {
+export default function ChatWindow({ conversation, onStatusChange, onBack }: Props) {
   const { user, currentWorkspace } = useAuth();
 
   const [messages,      setMessages]      = useState<Message[]>([]);
@@ -371,8 +372,18 @@ export default function ChatWindow({ conversation, onStatusChange }: Props) {
     <div className="flex-1 flex flex-col bg-gray-50 min-w-0">
 
       {/* ── Header ───────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 flex-shrink-0">
-        <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center
+      <div className="bg-white border-b border-gray-200 px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-2 md:gap-3 flex-shrink-0">
+        {/* Voltar — só mobile */}
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="md:hidden p-1.5 -ml-1 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 flex-shrink-0"
+            aria-label="Voltar"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
+        <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-brand-100 flex items-center justify-center
                         text-brand-700 font-semibold text-sm flex-shrink-0">
           {conversation.contact_name?.[0]?.toUpperCase()}
         </div>

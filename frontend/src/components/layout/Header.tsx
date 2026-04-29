@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { Bell } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 import { useNotifications } from '@/store/notifications';
+import { useSidebar } from '@/store/sidebar';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import clsx from 'clsx';
@@ -16,6 +17,7 @@ interface HeaderProps {
 export default function Header({ title, actions }: HeaderProps) {
   const { currentWorkspace }                        = useAuth();
   const { notifications, unreadCount, markAllRead } = useNotifications();
+  const { toggle } = useSidebar();
 
   const [open, setOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -36,9 +38,18 @@ export default function Header({ title, actions }: HeaderProps) {
   }
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center px-6 flex-shrink-0 z-10">
+    <header className="h-14 md:h-16 bg-white border-b border-gray-200 flex items-center px-4 md:px-6 flex-shrink-0 z-10 gap-3">
+      {/* Hamburguer — só mobile */}
+      <button
+        onClick={toggle}
+        className="md:hidden p-2 -ml-1 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0"
+        aria-label="Abrir menu"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
       <div className="flex-1 min-w-0">
-        <h1 className="text-lg font-semibold text-gray-900 truncate">{title}</h1>
+        <h1 className="text-base md:text-lg font-semibold text-gray-900 truncate">{title}</h1>
         {currentWorkspace && (
           <p className="text-xs text-gray-400 truncate">{currentWorkspace.name}</p>
         )}

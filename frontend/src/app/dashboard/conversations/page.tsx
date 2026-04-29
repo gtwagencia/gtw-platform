@@ -10,6 +10,7 @@ import ChatWindow from '@/components/chat/ChatWindow';
 import api from '@/lib/api';
 import type { Conversation } from '@/types';
 import { MessageSquare } from 'lucide-react';
+import clsx from 'clsx';
 import { useNotifications } from '@/hooks/useNotifications';
 
 function ConversationsInner() {
@@ -45,19 +46,29 @@ function ConversationsInner() {
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      <ConversationList
-        workspaceId={currentWorkspace.id}
-        selected={selected?.id ?? null}
-        onSelect={setSelected}
-      />
-
-      {selected ? (
-        <ChatWindow
-          conversation={selected}
-          onStatusChange={(updated) => setSelected(updated)}
+      {/* Lista — oculta no mobile quando conversa está aberta */}
+      <div className={clsx(
+        'flex-shrink-0',
+        selected ? 'hidden md:flex' : 'flex w-full md:w-80'
+      )}>
+        <ConversationList
+          workspaceId={currentWorkspace.id}
+          selected={selected?.id ?? null}
+          onSelect={setSelected}
         />
+      </div>
+
+      {/* Chat — ocupa tudo no mobile, flex-1 no desktop */}
+      {selected ? (
+        <div className="flex-1 flex flex-col min-w-0">
+          <ChatWindow
+            conversation={selected}
+            onStatusChange={(updated) => setSelected(updated)}
+            onBack={() => setSelected(null)}
+          />
+        </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-gray-50">
+        <div className="hidden md:flex flex-1 flex-col items-center justify-center text-center p-8 bg-gray-50">
           <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
             <MessageSquare className="w-8 h-8 text-gray-300" />
           </div>
