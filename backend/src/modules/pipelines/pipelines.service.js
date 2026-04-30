@@ -248,22 +248,22 @@ async function removePipeline(pipelineId, workspaceId) {
 
 // Stage management within a pipeline
 async function createStage(workspaceId, pipelineId, body) {
-  const { name, color, position, isDefault, aiPrompt } = body;
+  const { name, color, position, isDefault, aiPrompt, isPurchase } = body;
   const posRes = await query(
     `SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM kanban_stages WHERE pipeline_id = $1`,
     [pipelineId]
   );
   const pos = position ?? posRes.rows[0].next_pos;
   const r = await query(
-    `INSERT INTO kanban_stages (workspace_id, pipeline_id, name, color, position, is_default, ai_prompt)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [workspaceId, pipelineId, name, color || '#6366f1', pos, isDefault || false, aiPrompt || null]
+    `INSERT INTO kanban_stages (workspace_id, pipeline_id, name, color, position, is_default, ai_prompt, is_purchase)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [workspaceId, pipelineId, name, color || '#6366f1', pos, isDefault || false, aiPrompt || null, isPurchase || false]
   );
   return r.rows[0];
 }
 
 async function updateStage(stageId, workspaceId, body) {
-  const map = { name: 'name', color: 'color', position: 'position', isDefault: 'is_default', aiPrompt: 'ai_prompt' };
+  const map = { name: 'name', color: 'color', position: 'position', isDefault: 'is_default', aiPrompt: 'ai_prompt', isPurchase: 'is_purchase' };
   const fields = []; const vals = []; let idx = 1;
   for (const [k, col] of Object.entries(map)) {
     if (body[k] !== undefined) { fields.push(`${col} = $${idx++}`); vals.push(body[k]); }

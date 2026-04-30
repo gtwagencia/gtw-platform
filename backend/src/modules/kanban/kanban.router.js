@@ -69,8 +69,39 @@ router.post('/deals', authenticate, workspaceContext, async (req, res, next) => 
 
 router.put('/deals/:dealId', authenticate, workspaceContext, async (req, res, next) => {
   try {
+    const { query } = require('../../config/database');
+
+    // Carrega deal anterior para comparar stage
+    const prevRes = await query('SELECT stage_id FROM deals WHERE id = $1', [req.params.dealId]);
+    const prevStageId = prevRes.rows[0]?.stage_id;
+
     const deal = await svc.updateDeal(req.params.dealId, req.params.workspaceId, req.body);
     req.app.get('io')?.to(`ws:${req.params.workspaceId}`).emit('deal:updated', deal);
+
+    // Se mudou de stage e nova stage tem is_purchase = true → envia Purchase ao Meta CAPI
+    if (deal.stage_id && deal.stage_id !== prevStageId) {
+      const stageRes = await query(
+        'SELECT is_purchase FROM kanban_stages WHERE id = $1', [deal.stage_id]
+      );
+      if (stageRes.rows[0]?.is_purchase) {
+        const wsRes = await query(
+          'SELECT id, meta_pixel_id, meta_conversions_token FROM workspaces WHERE id = $1',
+          [req.params.workspaceId]
+        );
+        const ws = wsRes.rows[0];
+        if (ws?.meta_pixel_id && ws?.meta_conversions_token) {
+          const metaSvc  = require('../../modules/meta/meta.service');
+          const contactRes = await query('SELECT * FROM contacts WHERE id = $1', [deal.contact_id]);
+          const contact    = contactRes.rows[0];
+          if (contact) {
+            metaSvc.sendPurchaseEvent(ws, { contact, deal }).catch(err =>
+              require('../../utils/logger').warn('Meta Purchase event failed', { err: err.message, dealId: deal.id })
+            );
+          }
+        }
+      }
+    }
+
     res.json(deal);
   } catch (err) { next(err); }
 });

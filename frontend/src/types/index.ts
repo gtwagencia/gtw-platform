@@ -203,6 +203,7 @@ export interface PipelineStage {
   color: string;
   position: number;
   is_default: boolean;
+  is_purchase: boolean;
   ai_prompt: string | null;
   deal_count: number;
   total_value: number;

@@ -23,6 +23,7 @@ interface StageFormState {
   name: string;
   color: string;
   isDefault: boolean;
+  isPurchase: boolean;
   aiPrompt: string;
   isNew?: boolean;
 }
@@ -129,6 +130,25 @@ function StageRow({
             <label className="block text-xs font-medium text-gray-600 mb-1.5">Cor</label>
             <ColorPicker value={stage.color} onChange={c => onChange({ ...stage, color: c })} />
           </div>
+
+          {/* Toggle: Etapa de compra (dispara evento Purchase no Meta CAPI) */}
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <div className="relative flex-shrink-0">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={stage.isPurchase}
+                onChange={e => onChange({ ...stage, isPurchase: e.target.checked })}
+              />
+              <div className={clsx('w-9 h-5 rounded-full transition-colors', stage.isPurchase ? 'bg-green-500' : 'bg-gray-200')} />
+              <div className={clsx('absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', stage.isPurchase && 'translate-x-4')} />
+            </div>
+            <div>
+              <div className="text-xs font-medium text-gray-700">Etapa de compra</div>
+              <div className="text-xs text-gray-400">Ao mover um lead aqui, envia evento Purchase ao Meta Ads automaticamente</div>
+            </div>
+          </label>
+
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               Prompt de IA (opcional)
@@ -179,6 +199,7 @@ function PipelineCard({
       name: s.name,
       color: s.color,
       isDefault: s.is_default,
+      isPurchase: s.is_purchase ?? false,
       aiPrompt: s.ai_prompt || '',
     })),
   });
@@ -188,7 +209,7 @@ function PipelineCard({
       ...f,
       stages: [
         ...f.stages,
-        { name: '', color: '#6366f1', isDefault: false, aiPrompt: '', isNew: true },
+        { name: '', color: '#6366f1', isDefault: false, isPurchase: false, aiPrompt: '', isNew: true },
       ],
     }));
   }
@@ -255,11 +276,11 @@ function PipelineCard({
       for (const s of form.stages) {
         if (s.id && existingIds.has(s.id)) {
           await api.put(`/workspaces/${workspaceId}/pipelines/${pipeline.id}/stages/${s.id}`, {
-            name: s.name, color: s.color, isDefault: s.isDefault, aiPrompt: s.aiPrompt || null,
+            name: s.name, color: s.color, isDefault: s.isDefault, isPurchase: s.isPurchase, aiPrompt: s.aiPrompt || null,
           });
         } else {
           await api.post(`/workspaces/${workspaceId}/pipelines/${pipeline.id}/stages`, {
-            name: s.name, color: s.color, isDefault: s.isDefault, aiPrompt: s.aiPrompt || null,
+            name: s.name, color: s.color, isDefault: s.isDefault, isPurchase: s.isPurchase, aiPrompt: s.aiPrompt || null,
           });
         }
       }

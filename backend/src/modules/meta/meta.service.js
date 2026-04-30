@@ -116,6 +116,49 @@ async function sendLeadEvent(workspace, { contact, metaCtwaClid }) {
   return sendEvent(workspace, { eventName: 'Lead', contact, metaCtwaClid });
 }
 
+// ── Detecção de compra em mensagem ────────────────────────────────────────
+
+/**
+ * Tenta identificar uma confirmação de pedido/compra em uma mensagem.
+ * Retorna { value, orderId, currency } ou null se não for pedido.
+ */
+function detectPurchaseFromMessage(content) {
+  if (!content || content.length < 20) return null;
+
+  // Verifica padrões típicos de confirmação de pedido
+  const isPurchase = /pedido\s*#?\d+/i.test(content)
+    || /recebemos.*pedido/i.test(content)
+    || /confirma[çc][aã]o.*pedido/i.test(content)
+    || /seu pedido.*foi/i.test(content);
+
+  if (!isPurchase) return null;
+
+  // Extrai número do pedido
+  const orderMatch = content.match(/pedido\s*#?(\d+)/i);
+  const orderId    = orderMatch ? orderMatch[1] : null;
+
+  // Extrai valor total (suporta R$ 139,90 e R$ 139.90)
+  // Procura pela linha "Total:" ou "Total Geral:"
+  const totalMatch = content.match(/Total(?:\s*Geral)?[:\s*]+R?\$?\s*([\d.,]+)/im);
+  if (!totalMatch) return null;
+
+  const raw      = totalMatch[1].trim();
+  // Converte formato brasileiro (1.234,56 → 1234.56) ou americano (1,234.56 → 1234.56)
+  let valueStr;
+  if ( /\d{1,3}\.\d{3},\d{2}$/.test(raw) ) {
+    valueStr = raw.replace(/\./g, '').replace(',', '.'); // 1.234,56 → 1234.56
+  } else if ( /,\d{2}$/.test(raw) ) {
+    valueStr = raw.replace(',', '.'); // 139,90 → 139.90
+  } else {
+    valueStr = raw; // já está em formato ponto
+  }
+
+  const value = parseFloat(valueStr);
+  if (isNaN(value) || value <= 0) return null;
+
+  return { value, orderId, currency: 'BRL' };
+}
+
 // ── Marketing API: busca detalhes do anúncio ──────────────────────────────
 
 /**
@@ -166,4 +209,4 @@ async function listEvents(workspaceId, { page = 1, limit = 50 } = {}) {
   return { data: r.rows, total: parseInt(countRes.rows[0].count, 10), page, limit };
 }
 
-module.exports = { sendEvent, sendPurchaseEvent, sendLeadEvent, listEvents, fetchAdDetails };
+module.exports = { sendEvent, sendPurchaseEvent, sendLeadEvent, listEvents, fetchAdDetails, detectPurchaseFromMessage };
