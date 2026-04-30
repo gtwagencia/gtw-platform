@@ -383,20 +383,56 @@ async function analyzeDeal(dealId, workspaceId) {
   };
   if (stageId) updates.stage_id = stageId;
 
-  // Atualiza valor do deal se IA extraiu de documentos/comprovante e o campo ainda está zerado
+  // ── Detecção de compra ─────────────────────────────────────────────────────
+  // 1. IA sinalizou payment_detected
+  // 2. OU mensagens da conversa contêm padrão de pedido com valor
+  const metaSvc = require('../modules/meta/meta.service');
+  let purchaseValue = null;
+
   if (result.deal_value && typeof result.deal_value === 'number' && result.deal_value > 0) {
-    const dealRes = await query('SELECT value FROM deals WHERE id = $1', [dealId]);
-    const currentValue = parseFloat(dealRes.rows[0]?.value || 0);
-    if (currentValue === 0) updates.value = result.deal_value;
+    purchaseValue = result.deal_value;
+  } else {
+    // Varre as últimas mensagens em busca de padrão de pedido
+    const msgsRes = await query(
+      `SELECT content FROM messages
+       WHERE conversation_id = $1 AND content IS NOT NULL
+       ORDER BY created_at DESC LIMIT 20`,
+      [conversation_id]
+    );
+    for (const m of msgsRes.rows) {
+      const detected = metaSvc.detectPurchaseFromMessage(m.content);
+      if (detected) { purchaseValue = detected.value; break; }
+    }
   }
 
-  // Se IA identificou comprovante de pagamento, força estágio para "Comprou"
-  if (result.payment_detected && pipeline_id) {
-    const comprou = await query(
-      `SELECT id FROM kanban_stages WHERE pipeline_id = $1 AND name = 'Comprou' LIMIT 1`,
+  // Atualiza valor do deal se ainda está zerado
+  if (purchaseValue && purchaseValue > 0) {
+    const dealRes = await query('SELECT value FROM deals WHERE id = $1', [dealId]);
+    const currentValue = parseFloat(dealRes.rows[0]?.value || 0);
+    if (currentValue === 0) updates.value = purchaseValue;
+  }
+
+  // Detecta se deve mover para etapa de compra (is_purchase = true OU payment_detected)
+  const isPurchaseDetected = result.payment_detected || purchaseValue !== null;
+  let purchaseStageId = null;
+
+  if (isPurchaseDetected && pipeline_id) {
+    // Prioridade: etapa marcada como is_purchase
+    const purchaseStageRes = await query(
+      `SELECT id FROM kanban_stages WHERE pipeline_id = $1 AND is_purchase = true ORDER BY position LIMIT 1`,
       [pipeline_id]
     );
-    if (comprou.rows.length) updates.stage_id = comprou.rows[0].id;
+    if (purchaseStageRes.rows.length) {
+      purchaseStageId = purchaseStageRes.rows[0].id;
+    } else {
+      // Fallback: etapa chamada "Comprou"
+      const comprouRes = await query(
+        `SELECT id FROM kanban_stages WHERE pipeline_id = $1 AND name ILIKE '%comprou%' LIMIT 1`,
+        [pipeline_id]
+      );
+      if (comprouRes.rows.length) purchaseStageId = comprouRes.rows[0].id;
+    }
+    if (purchaseStageId) updates.stage_id = purchaseStageId;
   }
 
   const fields = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`);
@@ -407,6 +443,30 @@ async function analyzeDeal(dealId, workspaceId) {
      WHERE id = $${vals.length - 1} AND workspace_id = $${vals.length}`,
     vals
   );
+
+  // Dispara Purchase event ao Meta CAPI quando deal movido para etapa de compra
+  if (purchaseStageId && (purchaseValue || updates.value)) {
+    try {
+      const wsRes = await query(
+        'SELECT id, meta_pixel_id, meta_conversions_token FROM workspaces WHERE id = $1',
+        [workspaceId]
+      );
+      const ws = wsRes.rows[0];
+      if (ws?.meta_pixel_id && ws?.meta_conversions_token) {
+        const contactRes = await query('SELECT * FROM contacts WHERE id = $1', [contact_id]);
+        const contact    = contactRes.rows[0];
+        if (contact) {
+          const fakeDeal = { id: dealId, value: purchaseValue || updates.value || 0, currency: 'BRL' };
+          metaSvc.sendPurchaseEvent(ws, { contact, deal: fakeDeal }).catch(err =>
+            logger.warn('Meta Purchase event failed (AI)', { err: err.message, dealId })
+          );
+          logger.info('Meta Purchase event triggered by AI', { dealId, value: fakeDeal.value });
+        }
+      }
+    } catch (err) {
+      logger.warn('Meta Purchase event setup failed', { err: err.message });
+    }
+  }
 
   return { ...result, dealId };
 }
