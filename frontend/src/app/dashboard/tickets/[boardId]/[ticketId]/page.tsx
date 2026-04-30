@@ -349,11 +349,16 @@ export default function TicketDetailPage() {
                 {canEdit ? (
                   <textarea
                     value={ticket.description || ''}
-                    onChange={e => setTicket(p => p ? { ...p, description: e.target.value } : p)}
+                    onChange={e => {
+                      setTicket(p => p ? { ...p, description: e.target.value } : p);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = e.target.scrollHeight + 'px';
+                    }}
                     onBlur={() => patch({ description: ticket.description })}
                     rows={3}
-                    className="w-full text-sm text-gray-600 bg-gray-50 rounded-xl border border-gray-200 p-3 resize-none outline-none focus:ring-2 focus:ring-indigo-200"
+                    className="w-full text-sm text-gray-600 bg-gray-50 rounded-xl border border-gray-200 p-3 resize-none outline-none focus:ring-2 focus:ring-indigo-200 overflow-hidden"
                     placeholder="Adicione uma descrição..."
+                    style={{ minHeight: '80px' }}
                   />
                 ) : (
                   <p className="text-sm text-gray-600 whitespace-pre-wrap">{ticket.description || '—'}</p>
@@ -467,11 +472,16 @@ export default function TicketDetailPage() {
                   <div className="flex-1">
                     <textarea
                       value={commentText}
-                      onChange={e => setCommentText(e.target.value)}
+                      onChange={e => {
+                        setCommentText(e.target.value);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = e.target.scrollHeight + 'px';
+                      }}
                       placeholder="Escreva um comentário..."
                       rows={2}
-                      className="w-full text-sm bg-gray-50 rounded-xl border border-gray-200 px-3 py-2 resize-none outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300"
+                      className="w-full text-sm bg-gray-50 rounded-xl border border-gray-200 px-3 py-2 resize-none outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300 overflow-hidden"
                       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(e as any); } }}
+                      style={{ minHeight: '56px' }}
                     />
                     {commentFile && (
                       <div className="flex items-center gap-2 mt-2 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 text-xs">
