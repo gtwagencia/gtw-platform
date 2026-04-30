@@ -553,7 +553,7 @@ function NewPipelineForm({
       ...f,
       stages: [
         ...f.stages,
-        { name: '', color: '#6366f1', isDefault: f.stages.length === 0, aiPrompt: '', isNew: true },
+        { name: '', color: '#6366f1', isDefault: f.stages.length === 0, isPurchase: false, aiPrompt: '', isNew: true },
       ],
     }));
   }
